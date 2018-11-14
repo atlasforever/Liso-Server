@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/select.h>
 
 #define ECHO_PORT 9999
 #define BUF_SIZE 4096
@@ -39,6 +40,8 @@ int main(int argc, char* argv[])
     socklen_t cli_size;
     struct sockaddr_in addr, cli_addr;
     char buf[BUF_SIZE];
+
+    fd_set read_set, ready_set;
 
     fprintf(stdout, "----- Echo Server -----\n");
     
@@ -69,18 +72,31 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    FD_ZERO(&read_set);
+    FD_SET(sock, &read_set);
+
     /* finally, loop waiting for input and then write it back */
     while (1)
     {
-       cli_size = sizeof(cli_addr);
-       if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
-                                 &cli_size)) == -1)
+       ready_set = read_set;
+       if (select(sock + 1, &ready_set, NULL, NULL) == -1)
        {
            close(sock);
-           fprintf(stderr, "Error accepting connection.\n");
+           fprintf(stderr, "Error selecting to socket.\n");
            return EXIT_FAILURE;
        }
-       
+       if (FD_ISSET(sock, &ready_set))  // this socket is ready to be accepted
+       {
+           cli_size = sizeof(cli_addr);
+           if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
+                                     &cli_size)) == -1)
+           {
+               close(sock);
+               fprintf(stderr, "Error accepting connection.\n");
+               return EXIT_FAILURE;
+           } 
+       }
+
        readret = 0;
 
        while((readret = recv(client_sock, buf, BUF_SIZE, 0)) >= 1)
@@ -115,3 +131,4 @@ int main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+

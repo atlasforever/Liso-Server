@@ -28,6 +28,16 @@
 #define MAX_CLIENTS \
     (FD_SETSIZE - 1) // leave one select-fd for server's listenfd
 
+/* Command line arguments */
+static int http_port;
+static int https_port;
+static char *log_file;
+static char *lock_file;
+static char *www_folder;
+static char *cgi_path;
+static char *private_key_file;
+static char *cert_file;
+
 typedef struct {
     int maxfd;
     fd_set read_set;
@@ -159,6 +169,14 @@ void close_all_clients(pool* p)
             close_socket(p->clientfds[i]);
         }
     }
+}
+
+static int proc_cmd_line_args(int argc, char* argv[])
+{
+    if (argc != 9) {
+        return -1;
+    }
+
 }
 int main(int argc, char* argv[])
 {

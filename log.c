@@ -52,18 +52,18 @@ void log_write_core(int level, const char *fmt, ...)
     // time
     time_t now = time(0);
     stm = gmtime(&now);
-    length += strftime(log_buf, LOG_BUF_SIZE, "%Y-%m-%d %H:%M:%S", stm);
+    length += strftime(log_buf, LOG_BUF_SIZE, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
     // label
     switch (level) {
-        case LOG_DEBUG:
-            label = " [DEBUG] ";
+        case _LOG_DEBUG:
+            label = " [DEBUG]:";
             break;
-        case LOG_INFO:
-            label = " [INFO] ";
+        case _LOG_INFO:
+            label = " [INFO]:";
             break;
-        case LOG_ERROR:
-            label = " [ERROR] ";
+        case _LOG_ERROR:
+            label = " [ERROR]:";
             break;
         default: // no way you can get here
             break;
@@ -80,4 +80,5 @@ void log_write_core(int level, const char *fmt, ...)
     length++;
 
     fwrite(log_buf, sizeof(char), length, log_file);
+    fflush(log_file);
 }

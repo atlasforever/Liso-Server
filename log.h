@@ -2,9 +2,9 @@
 #define _LOG_H_
 
 enum {
-    LOG_DEBUG,
-    LOG_INFO,
-    LOG_ERROR
+    _LOG_DEBUG,
+    _LOG_INFO,
+    _LOG_ERROR
 };
 
 void log_write_core(int level, const char *fmt, ...);

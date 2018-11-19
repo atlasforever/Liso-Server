@@ -19,6 +19,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include "log.h"
 #include "common.h"
@@ -176,7 +177,60 @@ static int proc_cmd_line_args(int argc, char* argv[])
     if (argc != 9) {
         return -1;
     }
+    /* wrong if atoi error or the number itself is 0 */
+    if ((http_port = atoi(argv[1])) == 0) {return -1;}
+    if ((https_port = atoi(argv[2])) == 0) {return -1;}
+    log_file = argv[3];
+    lock_file = argv[4];
+    www_folder = argv[5];
+    cgi_path = argv[6];
+    private_key_file = argv[7];
+    cert_file = argv[8];
 
+    return 0;
+}
+
+static int init(int argc, char* argv[])
+{
+    if (proc_cmd_line_args(argc, argv) == -1) {
+        fprintf(stderr, "Please input right cmd args\n");
+        return -1;
+    }
+    if (init_log(log_file) == -1) {
+        fprintf(stderr, "init_log failed\n");
+        return -1;
+    }
+
+    
+    return 0;
+}
+
+static int open_listenfd()
+{
+    int sock, client_sock;
+    struct sockaddr_in addr;
+
+    if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
+        log_error("socket");
+        return -1;
+    }
+
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(ECHO_PORT);
+    addr.sin_addr.s_addr = INADDR_ANY;
+    /* servers bind sockets to ports---notify the OS they accept connections */
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
+        close_socket(sock);
+        log_error("bind");
+        return -1;
+    }
+
+    if (listen(sock, 1024)) {
+        close_socket(sock);
+        log_error("listen");
+        return -1;
+    }
+    return sock;
 }
 int main(int argc, char* argv[])
 {
@@ -185,37 +239,24 @@ int main(int argc, char* argv[])
     struct sockaddr_in addr, cli_addr;
 
     static pool pool;
-
-    init_log(argv[1]);
-    log_info("------------Lisod Starts------------");
-    /* all networked programs must create a socket */
-    if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
-        log_error("socket");
+    /* init all */
+    if (init(argc, argv) == -1) {exit(EXIT_FAILURE);}
+    if (proc_cmd_line_args(argc, argv) == -1) {
+        fprintf(stderr, "Please input right cmd args\n");
+        exit(EXIT_FAILURE);
+    }
+    if (init_log(log_file) == -1) {
+        fprintf(stderr, "init_log failed\n");
+        exit(EXIT_FAILURE);
+    }
+    if ((sock = open_listenfd()) == -1) {
         close_log();
         exit(EXIT_FAILURE);
     }
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(ECHO_PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    /* servers bind sockets to ports---notify the OS they accept connections */
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
-        close_socket(sock);
-        log_error("bind");
-        close_log();
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(sock, 1024)) {
-        close_socket(sock);
-        log_error("listen");
-        close_log();
-        exit(EXIT_FAILURE);
-    }
-    
     init_pool(sock, &pool);
 
+
+    log_info("------------Lisod Starts------------");
     /* finally, loop waiting for input and then write it back */
     while (1) {
         pool.ready_set = pool.read_set;

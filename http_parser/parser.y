@@ -42,13 +42,14 @@ size_t parsing_buf_siz;
 
 /* Current parsing_request Header Struct */
 Request *parsing_request;
-
+/* To append linked list of headers*/
+Request_header *cur_request_header;
 %}
 
 
 /* Various types values that we can get from lex */
 %union {
-	char str[8192];
+	char str[8192];	/* from REQUEST_MAX_SIZE */
 	int i;
 }
 
@@ -118,11 +119,11 @@ t_dot;
 token:
 allowed_char_for_token {
 	YPRINTF("token: Matched rule 1.\n");
-	snprintf($$, 8192, "%c", $1);
+	snprintf($$, REQUEST_MAX_SIZE, "%c", $1);
 }; |
 token allowed_char_for_token {
 	YPRINTF("token: Matched rule 2.\n");
-  snprintf($$, 8192, "%s%c", $1, $2);
+  snprintf($$, REQUEST_MAX_SIZE, "%s%c", $1, $2);
 };
 
 /*
@@ -163,11 +164,11 @@ t_backslash {
  */
 text: allowed_char_for_text {
 	YPRINTF("text: Matched rule 1.\n");
-	snprintf($$, 8192, "%c", $1);
+	snprintf($$, REQUEST_MAX_SIZE, "%c", $1);
 }; |
 text ows allowed_char_for_text {
 	YPRINTF("text: Matched rule 2.\n");
-	snprintf($$, 8192, "%s%s%c", $1, $2, $3);
+	snprintf($$, REQUEST_MAX_SIZE, "%s%s%c", $1, $2, $3);
 };
 
 /*
@@ -179,27 +180,41 @@ ows: {
 }; |
 t_sp {
 	YPRINTF("OWS: Matched rule 2\n");
-	snprintf($$, 8192, "%c", $1);
+	snprintf($$, REQUEST_MAX_SIZE, "%c", $1);
 }; |
 t_ws {
 	YPRINTF("OWS: Matched rule 3\n");
-	snprintf($$, 8192, "%s", $1);
+	snprintf($$, REQUEST_MAX_SIZE, "%s", $1);
 };
 
 request_line: token t_sp text t_sp text t_crlf {
 	YPRINTF("request_Line:\n%s\n%s\n%s\n",$1, $3,$5);
-  strcpy(parsing_request->http_method, $1);
+
+	snprintf(parsing_request->http_method， HTTP_METHOD_MAX_SIZE + 1， )
+
+	strcpy(parsing_request->http_method, $1);
 	strcpy(parsing_request->http_uri, $3);
 	strcpy(parsing_request->http_version, $5);
 }
 
 request_header: token ows t_colon ows text ows t_crlf {
 	YPRINTF("request_Header:\n%s\n%s\n",$1,$5);
-  strcpy(parsing_request->headers[parsing_request->header_count].header_name, $1);
-	strcpy(parsing_request->headers[parsing_request->header_count].header_value, $5);
+
+	Request_header *tmp = (Request_header *) malloc(sizeof(Request_header)*1);
+	strcpy(tmp->header_name, $1);
+	strcpy(tmp->header_value, $5);
 	parsing_request->header_count++;
+
+	cur_request_header->next = tmp;
+	cur_request_header = cur_request_header->next;
+	cur_request_header->next = NULL;
 };
 
+request_headers: {	/* there can be no headers at all */
+	YPRINTF("request_Headers end\n");
+}; |
+request_header request_headers { /* For multiple headers */
+};
 
 /*
  * You need to fill this rule, and you are done! You have all the assembly
@@ -207,7 +222,7 @@ request_header: token ows t_colon ows text ows t_crlf {
  * and the annotated excerpted text on the course website. All the best!
  *
  */
-request: request_line request_header t_crlf{
+request: request_line request_headers t_crlf{
 	YPRINTF("parsing_request: Matched Success.\n");
 	return SUCCESS;
 };
@@ -218,10 +233,11 @@ request: request_line request_header t_crlf{
 
 void set_parsing_options(char *buf, size_t siz, Request *request)
 {
-  parsing_buf = buf;
+	parsing_buf = buf;
 	parsing_offset = 0;
 	parsing_buf_siz = siz;
-  parsing_request = request;
+	parsing_request = request;
+	cur_request_header = request->headers;	/* NULL initially */
 }
 
 void yyerror (char *s) {fprintf (stderr, "%s\n", s);}

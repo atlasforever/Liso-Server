@@ -8,16 +8,17 @@
 #                                                                              #
 ################################################################################
 
-default: lisod echo_client log
+default: lisod echo_client log.o
 
-lisod:
-	@gcc lisod.c -o lisod -Wall -Werror
 
 echo_client:
 	@gcc echo_client.c -o echo_client -Wall -Werror
 
-log:
+log.o:
 	@gcc log.c -c -Wall -Werror
+
+lisod: log.o lisod.c
+	@gcc lisod.c log.o -o lisod -Wall -Werror
 
 clean:
 	@rm lisod echo_client log.o

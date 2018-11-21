@@ -30,8 +30,8 @@
     (FD_SETSIZE - 1) // leave one select-fd for server's listenfd
 
 /* Command line arguments */
-static int http_port;
-static int https_port;
+static in_port_t http_port;
+static in_port_t https_port;
 static char *log_file;
 static char *lock_file;
 static char *www_folder;
@@ -131,7 +131,7 @@ void proc_clients(pool* p)
         /* ready to read */
         if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
             p->nready--;
-            NO_TEMP_FAILURE(rn = recv(connfd, p->buffers[i], BUF_SIZE, 0));
+            NO_TEMP_FAILURE(rn = recv(connfd, p->buffers[i], BUF_SIZE, MSG_DONTWAIT));
 
             if (rn >= 1) {
                 NO_TEMP_FAILURE(sn = send(connfd, p->buffers[i], rn, 0));
@@ -178,8 +178,8 @@ static int proc_cmd_line_args(int argc, char* argv[])
         return -1;
     }
     /* wrong if atoi error or the number itself is 0 */
-    if ((http_port = atoi(argv[1])) == 0) {return -1;}
-    if ((https_port = atoi(argv[2])) == 0) {return -1;}
+    if ((http_port = (in_port_t)atoi(argv[1])) == 0) {return -1;}
+    if ((https_port = (in_port_t)atoi(argv[2])) == 0) {return -1;}
     log_file = argv[3];
     lock_file = argv[4];
     www_folder = argv[5];
@@ -207,7 +207,7 @@ static int init(int argc, char* argv[])
 
 static int open_listenfd()
 {
-    int sock, client_sock;
+    int sock;
     struct sockaddr_in addr;
 
     if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
@@ -221,7 +221,7 @@ static int open_listenfd()
     /* servers bind sockets to ports---notify the OS they accept connections */
     if (bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
         close_socket(sock);
-        log_error("bind");
+        log_error("bind, errno is %d", errno);
         return -1;
     }
 
@@ -236,7 +236,7 @@ int main(int argc, char* argv[])
 {
     int sock, client_sock;
     socklen_t cli_size;
-    struct sockaddr_in addr, cli_addr;
+    struct sockaddr_in cli_addr;
 
     static pool pool;
     /* init all */
@@ -281,7 +281,7 @@ int main(int argc, char* argv[])
             {
                 close_all_clients(&pool);
                 close_socket(sock);
-                log_error("accept");
+                log_error("accept, errno is %d", errno);
                 close_log();
                 exit(EXIT_FAILURE);
             }

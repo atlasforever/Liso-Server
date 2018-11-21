@@ -18,9 +18,9 @@
 #endif
 
 /* yyparse() calls yyerror() on error */
-void yyerror (char *s);
+void yyerror (const char *s);
 
-void set_parsing_options(char *buf, size_t siz, Request *parsing_request);
+void set_parsing_options(char *buf, size_t siz, Request *request, int *_err_reason);
 
 /* yyparse() calls yylex() to get tokens */
 extern int yylex();
@@ -44,6 +44,8 @@ size_t parsing_buf_siz;
 Request *parsing_request;
 /* To append linked list of headers*/
 Request_header *cur_request_header;
+/* Error reason */
+int *err_reason;
 %}
 
 
@@ -189,9 +191,15 @@ t_ws {
 
 request_line: token t_sp text t_sp text t_crlf {
 	YPRINTF("request_Line:\n%s\n%s\n%s\n",$1, $3,$5);
-	if (strlen($1) > HTTP_METHOD_MAX_SIZE
-		|| strlen($3) > )
-
+	/* Stop parsing */
+	if (strlen($1) > HTTP_METHOD_MAX_SIZE || strlen($5) > HTTP_VERSION_MAX_SIZE) {
+		*err_reason = REQUEST_FAILURE;
+		YYABORT;
+	}
+	if (strlen($3) > HTTP_URI_MAX_SIZE) {
+		*err_reason = URI_LONG_FAILURE;
+		YYABORT;
+	}
 	strcpy(parsing_request->http_method, $1);
 	strcpy(parsing_request->http_uri, $3);
 	strcpy(parsing_request->http_version, $5);
@@ -201,6 +209,13 @@ request_header: token ows t_colon ows text ows t_crlf {
 	YPRINTF("request_Header:\n%s\n%s\n",$1,$5);
 
 	Request_header *tmp = (Request_header *) malloc(sizeof(Request_header)*1);
+
+	if (!tmp) {*err_reason = OTHER_FAILURE; YYABORT;}
+	if (strlen($1) > HEADER_NAME_MAX_SIZE || strlen($5) > HEADER_VALUE_MAX_SIZE) {
+		*err_reason = REQUEST_FAILURE;
+		YYABORT;
+	}
+
 	strcpy(tmp->header_name, $1);
 	strcpy(tmp->header_value, $5);
 	parsing_request->header_count++;
@@ -211,7 +226,7 @@ request_header: token ows t_colon ows text ows t_crlf {
 };
 
 request_headers: {	/* there can be no headers at all */
-	YPRINTF("request_Headers end\n");
+	YPRINTF("the last request_Headers\n");
 }; |
 request_header request_headers { /* For multiple headers */
 };
@@ -231,13 +246,16 @@ request: request_line request_headers t_crlf{
 
 /* C code */
 
-void set_parsing_options(char *buf, size_t siz, Request *request)
+void set_parsing_options(char *buf, size_t siz, Request *request, int *_err_reason)
 {
 	parsing_buf = buf;
 	parsing_offset = 0;
 	parsing_buf_siz = siz;
 	parsing_request = request;
-	cur_request_header = request->headers;	/* NULL initially */
+	cur_request_header = request->headers;
+
+	err_reason = _err_reason;
+	*err_reason = REQUEST_FAILURE;
 }
 
-void yyerror (char *s) {fprintf (stderr, "%s\n", s);}
+void yyerror (const char *s) {}

@@ -20,7 +20,11 @@ int main(int argc, char **argv){
   int readRet = read(fd_in,buf,REQUEST_MAX_SIZE);
   //Parse the buffer to the parse function. You will need to pass the socket fd and the buffer would need to
   //be read from that fd
-  Request *request = parse(buf,readRet,fd_in);
+  Request *request = (Request*)alloc_request();
+  int parseRet = parse(buf,readRet,fd_in, request);
+  if (parseRet == URI_LONG_FAILURE) {printf("URI TOO LONG!!!!!!!!!!\n");return 0;}
+  else if (parseRet == REQUEST_FAILURE) {printf("Bad Request!!!!!!!!!"); return 0;}
+
   //Just printing everything
   printf("Http Method %s\n",request->http_method);
   printf("Http Version %s\n",request->http_version);
@@ -31,7 +35,6 @@ int main(int argc, char **argv){
     printf("Request Header\n");
     printf("Header name %s Header Value %s\n",cur->header_name,cur->header_value);
   }
-  free_headers(request->headers);
-  free(request);
+  free_request(request);
   return 0;
 }

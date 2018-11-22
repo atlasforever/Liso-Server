@@ -23,6 +23,7 @@
 
 #include "log.h"
 #include "common.h"
+#include "http/parse.h"
 
 #define ECHO_PORT 9999
 #define BUF_SIZE 4096
@@ -39,6 +40,11 @@ static char *cgi_path;
 static char *private_key_file;
 static char *cert_file;
 
+/* Information about a connection */
+typedef struct {
+    parse_fsm pfsm;
+} client_conn;
+
 typedef struct {
     int maxfd;
     fd_set read_set;
@@ -47,7 +53,7 @@ typedef struct {
     int maxci;
     int listenfd;
     int clientfds[MAX_CLIENTS];
-    char buffers[MAX_CLIENTS][BUF_SIZE];
+    client_conn client_conns[MAX_CLIENTS];
 } pool;
 
 int close_socket(int sock)
@@ -65,6 +71,7 @@ void init_pool(int listenfd, pool* p)
     p->maxci = -1;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         p->clientfds[i] = -1;
+        p->client_conns[i].valid = 0;
     }
 
     p->maxfd = listenfd;
@@ -80,6 +87,10 @@ void add_client(int clientfd, pool* p)
         if (p->clientfds[i] == -1) {
             p->nready--;
             p->clientfds[i] = clientfd;
+
+            // initialize for persistent connection
+            init_parse_fsm(&(p->client_conns[i].pfsm));
+
             FD_SET(clientfd, &(p->read_set));
             if (i > p->maxci) {
                 p->maxci = i;
@@ -124,6 +135,8 @@ void proc_clients(pool* p)
 {
     int connfd;
     ssize_t rn, sn;
+    Request *request;
+    int ret;
 
     for (int i = 0; (i <= p->maxci) && (p->nready > 0); i++) {
         connfd = p->clientfds[i];
@@ -131,7 +144,20 @@ void proc_clients(pool* p)
         /* ready to read */
         if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
             p->nready--;
-            NO_TEMP_FAILURE(rn = recv(connfd, p->buffers[i], BUF_SIZE, MSG_DONTWAIT));
+            rn = recv_one_request(&p->client_conns[i].pfsm, connfd);
+            if (rn == -1) {
+                // close the connection!
+            } else if (rn == 0) {
+                continue;
+            } else {
+                request = alloc_request();
+                ret = parse(p->client_conns[i].pfsm.buf, rn, request);
+                if (ret == 0) {
+                    // success, do something
+                } else {
+                    // fail, reason see ret
+                }
+            }
 
             if (rn >= 1) {
                 NO_TEMP_FAILURE(sn = send(connfd, p->buffers[i], rn, 0));
@@ -272,23 +298,23 @@ int main(int argc, char* argv[])
             exit(EXIT_FAILURE);
         }
 
-        if (FD_ISSET(sock,
-                &(pool.ready_set))) // this socket is ready to be accepted
+        if (FD_ISSET(sock, &(pool.ready_set))) // a client tries to connect
         {
             cli_size = sizeof(cli_addr);
             NO_TEMP_FAILURE(client_sock = accept(sock, (struct sockaddr*)&cli_addr, &cli_size));
             if (client_sock == -1)
             {
-                close_all_clients(&pool);
-                close_socket(sock);
                 log_error("accept, errno is %d", errno);
-                close_log();
-                exit(EXIT_FAILURE);
+                if (errno != EMFILE) {  // skip it if too many fd opened
+                    close_all_clients(&pool);
+                    close_socket(sock);
+                    close_log();
+                    exit(EXIT_FAILURE);
+                }
+            } else {
+                add_client(client_sock, &pool);
             }
-
-            add_client(client_sock, &pool);
         }
-
         proc_clients(&pool);
     }
 

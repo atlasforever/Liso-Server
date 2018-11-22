@@ -40,7 +40,22 @@ typedef struct
 	int header_count;
 } Request;
 
-int parse(char *buffer, int size, int socketFd, Request *request);
+
+// State machine for parsing pipelining requests
+typedef struct
+{
+    int state;
+    int compelted;
+    char buf[REQUEST_MAX_SIZE];
+    int total_bytes;
+    // resume checking CRLFCRLF from this index in buf.
+    int idx2parse;
+} parse_fsm;
+
+
+void init_parse_fsm(parse_fsm *fsm);
+int recv_one_request(parse_fsm *fsm, int sock);
+int parse(char* buffer, int size, Request* request);
 Request* alloc_request();
 void free_request(Request *rqst);
 

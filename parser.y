@@ -125,7 +125,11 @@ allowed_char_for_token {
 }; |
 token allowed_char_for_token {
 	YPRINTF("token: Matched rule 2.\n");
-  snprintf($$, REQUEST_MAX_SIZE, "%s%c", $1, $2);
+  	if (snprintf($$, REQUEST_MAX_SIZE, "%s%c", $1, $2) < 0) {
+		/* make gcc happy */
+		*err_reason = REQUEST_FAILURE;
+		YYABORT;
+	  };
 };
 
 /*
@@ -166,11 +170,19 @@ t_backslash {
  */
 text: allowed_char_for_text {
 	YPRINTF("text: Matched rule 1.\n");
-	snprintf($$, REQUEST_MAX_SIZE, "%c", $1);
+	if (snprintf($$, REQUEST_MAX_SIZE, "%c", $1) < 0) {
+		/* make gcc happy */
+		*err_reason = REQUEST_FAILURE;
+		YYABORT;
+	};
 }; |
 text ows allowed_char_for_text {
 	YPRINTF("text: Matched rule 2.\n");
-	snprintf($$, REQUEST_MAX_SIZE, "%s%s%c", $1, $2, $3);
+	if (snprintf($$, REQUEST_MAX_SIZE, "%s%s%c", $1, $2, $3) < 0) {
+		/* make gcc happy */
+		*err_reason = REQUEST_FAILURE;
+		YYABORT;
+	};
 };
 
 /*

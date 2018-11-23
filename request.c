@@ -3,7 +3,8 @@
 
 #include "http_common.h"
 #include "parse.h"
-#include "../common.h"
+#include "common.h"
+#include "request.h"
 
 void response_400(int sockfd)
 {

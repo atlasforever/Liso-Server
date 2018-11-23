@@ -1,8 +1,8 @@
 #include "parse.h"
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "../common.h"
-#include "../log.h"
+#include "common.h"
+#include "log.h"
 
 /* Comes from generated Yacc code */
 int yyparse();
@@ -50,8 +50,6 @@ int parse(char* buffer, int size, Request* request)
 int recv_one_request(parse_fsm *fsm, int sock)
 {
     ssize_t rn;
-    int offset;
-    char ch;
 
     // Begin to read a new request
     if (fsm->compelted) {

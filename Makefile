@@ -7,18 +7,33 @@
 #          Wolf Richter <wolf@cs.cmu.edu>                                      #
 #                                                                              #
 ################################################################################
+CC= gcc
+CFLAGS= -Wall -Werror
+OBJDIR= obj
+objects= lisod.o log.o parse.o y.tab.o lex.yy.o request.o
 
-default: lisod echo_client log.o
+.PHONY: default clean
+
+default: lisod
+
+lex.yy.c: lexer.l
+	flex $^
+
+y.tab.c: parser.y
+	yacc -d $^
+
+# Automatically generated
+lex.yy.o: lex.yy.c y.tab.h
+	$(CC) $^ -c
+lisod.o: lisod.c log.h common.h parse.h request.h
+log.o: log.c log.h common.h
+parse.o: parse.c parse.h common.h log.h
+request.o: request.c http_common.h parse.h common.h request.h
+y.tab.o: y.tab.c parse.h
 
 
-echo_client:
-	@gcc echo_client.c -o echo_client -Wall -Werror
-
-log.o:
-	@gcc log.c -c -Wall -Werror
-
-lisod: log.o lisod.c
-	@gcc lisod.c log.o -o lisod -Wall -Werror
+lisod: $(objects)
+	$(CC) $(objects) -o lisod $(CFLAGS)
 
 clean:
-	@rm *.o y.tab.* lisod echo_client
+	@rm lisod *.o lex.yy.c y.tab.c y.tab.h

@@ -23,8 +23,8 @@
 
 #include "log.h"
 #include "common.h"
-#include "http/parse.h"
-#include "http/request.h"
+#include "parse.h"
+#include "request.h"
 
 #define ECHO_PORT 9999
 #define BUF_SIZE 4096
@@ -147,7 +147,7 @@ void remove_client(int old_idx, pool *p)
         update_rmed_maxci(p);
     }
     if (p->maxfd == old_fd) {
-        update_rmed_maxci(p);
+        update_rmed_maxfd(p);
     }
 }
 
@@ -160,7 +160,7 @@ void proc_one_client(int idx, pool *p)
 void proc_clients(pool *p)
 {
     int connfd;
-    ssize_t rn, sn;
+    ssize_t rn;
     Request *request;
     int ret;
 

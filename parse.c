@@ -71,6 +71,7 @@ int recv_one_request(parse_fsm *fsm, int sock)
         if (errno == EAGAIN || errno == EWOULDBLOCK) {  // nonblocking
             return 0;
         } else {
+            fsm->compelted = 1;
             return -1;
         }
     }

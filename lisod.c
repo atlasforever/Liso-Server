@@ -24,6 +24,7 @@
 #include "log.h"
 #include "common.h"
 #include "http/parse.h"
+#include "http/request.h"
 
 #define ECHO_PORT 9999
 #define BUF_SIZE 4096
@@ -71,7 +72,6 @@ void init_pool(int listenfd, pool* p)
     p->maxci = -1;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         p->clientfds[i] = -1;
-        p->client_conns[i].valid = 0;
     }
 
     p->maxfd = listenfd;
@@ -131,7 +131,33 @@ static void update_rmed_maxfd(pool* p)
     p->maxfd = maxfd;
 }
 
-void proc_clients(pool* p)
+void remove_client(int old_idx, pool *p)
+{
+    if (p->clientfds[old_idx] == -1) {
+        return;
+    }
+    
+    int old_fd = p->clientfds[old_idx];
+
+    close_socket(old_fd);
+    FD_CLR(old_fd, &p->read_set);
+    p->clientfds[old_idx] = -1;
+
+    if (p->maxci == old_idx) {
+        update_rmed_maxci(p);
+    }
+    if (p->maxfd == old_fd) {
+        update_rmed_maxci(p);
+    }
+}
+
+/* we can assume the fd is avaliable */
+void proc_one_client(int idx, pool *p)
+{
+
+}
+
+void proc_clients(pool *p)
 {
     int connfd;
     ssize_t rn, sn;
@@ -146,54 +172,33 @@ void proc_clients(pool* p)
             p->nready--;
             rn = recv_one_request(&p->client_conns[i].pfsm, connfd);
             if (rn == -1) {
-                // close the connection!
+                remove_client(i, p);
+                log_info("Remove one client, fd is %d", connfd);
             } else if (rn == 0) {
+                log_debug("continue");
                 continue;
             } else {
                 request = alloc_request();
+                printf("%s\n\n", p->client_conns[i].pfsm.buf);
                 ret = parse(p->client_conns[i].pfsm.buf, rn, request);
+                log_debug("ret is %d", ret);
                 if (ret == 0) {
                     // success, do something
+                    response_400(connfd);
                 } else {
-                    // fail, reason see ret
+                    response_400(connfd);
+                    remove_client(i, p);
                 }
-            }
-
-            if (rn >= 1) {
-                NO_TEMP_FAILURE(sn = send(connfd, p->buffers[i], rn, 0));
-                if (sn != rn) { /* wrong when sn != rn. Remove the client on send errors */
-                    log_error("send failed");
-                    if (p->maxci == i) {
-                        update_rmed_maxci(p);
-                    }
-                    if (p->maxfd == connfd) {
-                        update_rmed_maxfd(p);
-                    }
-                    close_socket(connfd);
-                    FD_CLR(connfd, &(p->read_set));
-                    p->clientfds[i] = -1;
-                }
-            }
-            else { /* remove the client on EOF or recv errors */
-                if (p->maxci == i) {
-                    update_rmed_maxci(p);
-                }
-                if (p->maxfd == connfd) {
-                    update_rmed_maxfd(p);
-                }
-                close_socket(connfd);
-                FD_CLR(connfd, &(p->read_set));
-                p->clientfds[i] = -1;
             }
         }
     }
 }
 
-void close_all_clients(pool* p)
+void close_all_clients(pool *p)
 {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (p->clientfds[i] != -1) {
-            close_socket(p->clientfds[i]);
+            remove_client(i, p);
         }
     }
 }

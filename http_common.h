@@ -1,6 +1,11 @@
 #ifndef _HTTP_COMMON_H_
 #define _HTTP_COMMON_H_
 
+
+#define HTTP_VERSION "HTTP/1.1"
+
+
+
 #define HTTP_CONTINUE                           100
 #define HTTP_SWITCHING_PROTOCOLS                101
 

@@ -21,4 +21,4 @@ lisod: log.o lisod.c
 	@gcc lisod.c log.o -o lisod -Wall -Werror
 
 clean:
-	@rm lisod echo_client log.o
+	@rm *.o y.tab.* lisod echo_client

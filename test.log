@@ -1,0 +1,276 @@
+Fri, 23 Nov 2018 03:39:50 GMT [INFO]:------------Lisod Starts------------
+Fri, 23 Nov 2018 03:40:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 03:41:24 GMT [INFO]:Remove one client, fd is 5
+Fri, 23 Nov 2018 03:42:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 03:43:09 GMT [INFO]:Remove one client, fd is 5
+Fri, 23 Nov 2018 03:45:49 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 03:45:51 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:06:05 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:06:12 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:06:27 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:09:19 GMT [INFO]:------------Lisod Starts------------
+Fri, 23 Nov 2018 05:09:42 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:09:47 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:09:48 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:10:22 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:10:24 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:10:37 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:10:45 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:10:46 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:11:06 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:10 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:11:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:14 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:11:24 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:24 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:25 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:11:34 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:38 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:39 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:11:46 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:50 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:11:50 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:15:37 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:40 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:42 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:44 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:51 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:51 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:52 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:53 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:15:58 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:00 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:16:03 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:03 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:16:03 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:05 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:05 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:06 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:16:23 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:16:27 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:16:53 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:17:22 GMT [INFO]:------------Lisod Starts------------
+Fri, 23 Nov 2018 05:17:31 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:17:35 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:17:36 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:17:39 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:17:40 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:17:59 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:18:05 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:18:06 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:18:20 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:18:23 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:18:23 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:20:42 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:20:49 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:20:50 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:12 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:15 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:21:44 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:44 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:46 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:49 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:49 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:51 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:53 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:53 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:53 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:54 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:55 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:55 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:57 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:57 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:57 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:21:58 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:21:58 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:00 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:01 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:01 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:01 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:02 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:02 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:02 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:02 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:02 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:03 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:03 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:03 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:03 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:08 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:08 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:08 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:09 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:10 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:12 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:13 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:14 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:15 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:16 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:17 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:18 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:18 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:18 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:22 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:22 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:23 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:27 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:27 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:29 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:30 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:22:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:44 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:44 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:22:46 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:46 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:22:46 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 05:23:30 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:24:09 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 05:25:17 GMT [INFO]:------------Lisod Starts------------
+Fri, 23 Nov 2018 05:25:34 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:25:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:25:42 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 05:25:47 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:25:47 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 05:25:49 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 06:24:36 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:24:38 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:24:38 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:24:41 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:24:45 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:24:46 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:25:01 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:04 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:04 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:25:08 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:11 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:11 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 06:25:43 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:46 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:47 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:25:52 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:56 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:25:56 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:25:59 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:01 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:01 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:26:03 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:07 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:07 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:26:08 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:09 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:10 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:26:20 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:25 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:26:26 GMT [DEBUG]:ret is 2
+Fri, 23 Nov 2018 06:28:30 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:32 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:33 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:35 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:36 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:37 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:38 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:38 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:28:39 GMT [ERROR]:bind, errno is 98
+Fri, 23 Nov 2018 06:30:34 GMT [INFO]:------------Lisod Starts------------
+Fri, 23 Nov 2018 06:31:38 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:31:44 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:31:44 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 06:31:52 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:31:56 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:31:56 GMT [DEBUG]:ret is 0
+Fri, 23 Nov 2018 06:31:58 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:32:00 GMT [DEBUG]:continue
+Fri, 23 Nov 2018 06:32:00 GMT [DEBUG]:ret is 2

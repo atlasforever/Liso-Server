@@ -179,7 +179,6 @@ void proc_clients(pool *p)
                 continue;
             } else {
                 request = alloc_request();
-                printf("%s\n\n", p->client_conns[i].pfsm.buf);
                 ret = parse(p->client_conns[i].pfsm.buf, rn, request);
                 log_debug("ret is %d", ret);
                 if (ret == 0) {

@@ -9,7 +9,6 @@
 ################################################################################
 CC= gcc
 CFLAGS= -Wall -Werror
-OBJDIR= obj
 objects= lisod.o log.o parse.o y.tab.o lex.yy.o request.o
 
 .PHONY: default clean

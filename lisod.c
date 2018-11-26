@@ -139,7 +139,7 @@ void remove_client(int old_idx, pool *p)
     }
     
     int old_fd = p->clientfds[old_idx];
-
+    log_info("Remove one client, fd is %d", old_fd);
     close_socket(old_fd);
     FD_CLR(old_fd, &p->read_set);
     p->clientfds[old_idx] = -1;
@@ -174,7 +174,6 @@ void proc_clients(pool *p)
             rn = recv_one_request(&p->client_conns[i].pfsm, connfd);
             if (rn == -1) {
                 remove_client(i, p);
-                log_info("Remove one client, fd is %d", connfd);
             } else if (rn == 0) {
                 log_debug("continue");
                 continue;
@@ -193,13 +192,15 @@ void proc_clients(pool *p)
                 log_debug("ret is %d", ret);
                 if (ret == 0) {
                     // success, do something
-                    do_request(request, connfd);
-                } else {
-                    // error parsing
+                    ret = do_request(request, connfd);
+                    if (ret == -1) {
+                        remove_client(i, p);
+                    }
+                } else { // error parsing
                     if (response_error(HTTP_BAD_REQUEST, connfd) == -1) {
                         log_error("Failed to send error response to sock %d", connfd);
+                        remove_client(i, p);
                     }
-                    remove_client(i, p);
                 }
                 free_request(request);
             }

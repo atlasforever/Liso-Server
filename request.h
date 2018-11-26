@@ -1,7 +1,7 @@
 #ifndef _REQUEST_H_
 #define _REQUEST_H_
 
-void do_request(Request *request, int sockfd);
+int do_request(Request *request, int sockfd);
 int response_error(int code, int fd);
 
 

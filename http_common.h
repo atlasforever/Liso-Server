@@ -4,8 +4,19 @@
 
 #define HTTP_VERSION "HTTP/1.1"
 
+/*
+ * Supported MIME
+ */
+#define MIME_HTML "text/html"
+#define MIME_CSS  "text/css"
+#define MIME_PNG  "image/png"
+#define MIME_GIF  "image/gif"
+#define MIME_JPEG "image/jpeg"
+#define MIME_OCTET_STREAM "application/octet-stream"
 
-
+/*
+ * Status Codes
+ */
 #define HTTP_CONTINUE                           100
 #define HTTP_SWITCHING_PROTOCOLS                101
 

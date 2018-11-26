@@ -1,7 +1,10 @@
 #include <sys/types.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/sendfile.h>
+#include <string.h>
 
 #include "http_common.h"
 #include "log.h"
@@ -13,22 +16,23 @@ extern char *www_folder;
 
 const char *default_index = "index.html";
 
-static int send_body_by_file(char *filepath, int fd);
+static int do_GET_request(Request *request, int fd);
+static int send_body_by_file(char *filepath, size_t len, int fd);
 static int send_body_by_buf(char *body, size_t len, int fd);
 static int end_headers(int fd, int hasBody);
 static int send_header(char *name, char *value, int fd);
 static int send_response_line(char *version, int code, char *phrase, int fd);
+static unsigned long get_file_size(char *path);
+static char *get_MMIE(const char *filename);
 
-
-void do_request(Request *request, int sockfd)
+int do_request(Request *request, int sockfd)
 {
     // Not compatible
     if (strcmp(HTTP_VERSION, request->http_version) != 0) {
         response_error(HTTP_BAD_REQUEST, sockfd);
-        return;
     }
     if (strcmp("GET", request->http_method) == 0) {
-        response_error(HTTP_NOT_FOUND, sockfd);
+        return do_GET_request(request, sockfd);
     } else if (strcmp("HEAD", request->http_method) == 0) {
 
     } else if (strcmp("POST", request->http_method) == 0) {
@@ -36,21 +40,25 @@ void do_request(Request *request, int sockfd)
     } else {
         response_error(HTTP_NOT_IMPLEMENTED, sockfd);
     }
+    return 0;
 }
 
-static void do_GET_request(Request *request, int fd)
+/* 0: ok. 
+ * -1: error. Need to close the connection
+ */
+static int do_GET_request(Request *request, int fd)
 {
     struct tm *stm;
     time_t now;
-    char timemsg[64];
+    char msg[64];
+    unsigned long sz;
 
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
     if (!path) {
-        log_error("fail to malloc in do_GET_request()");
-        response_error(HTTP_INTERNAL_SERVER_ERROR, fd);
-        return;
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
+        return 0;
     }
-
+    // make file path
     strcpy(path, www_folder);
     if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
         strcat(path, default_index);
@@ -60,24 +68,40 @@ static void do_GET_request(Request *request, int fd)
     } else {
         // only support "abs_path"
         log_info("A invalid path:%s", request->http_uri);
-        response_error(HTTP_NOT_FOUND, fd);
         free(path);
-        return;
+        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
+        return 0;
     }
+    // get time
     now = time(0);
     stm = gmtime(&now);
-    strftime(timemsg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
-    if (send_header("Date", timemsg, fd) == -1) {free(path); return -1;}
-    if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
-    if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
+    strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
-    unsigned long sz = get_file_size(path);
+    if (access(path, F_OK | R_OK) != 0) {
+        log_debug("fail to read this file:%s", path);
+        free(path);
+        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
+        return 0;
+    }
+    sz = get_file_size(path);
     if (sz == -1) {
         log_error("get_file_size failed");
         free(path);
-        return;
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
+        return 0;
     }
+    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}
+    if (send_header("Date", msg, fd) == -1) {free(path); return -1;}
+    if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
+    if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
+    sprintf(msg, "%ld", sz);
+    if (send_header("Content-Length", msg, fd) == -1) {free(path); return -1;}
+    if (send_header("Content-Type", get_MMIE(path), fd) == -1) {free(path); return -1;}
+    if (end_headers(fd, 1) == -1) {free(path); return -1;}
+    if (send_body_by_file(path, sz, fd) == -1) {free(path); return -1;}
+
     free(path);
+    return 0;
 }
 
 int response_error(int code, int fd)
@@ -89,27 +113,29 @@ int response_error(int code, int fd)
 
     switch (code) {
     case HTTP_NOT_FOUND:
-        send_response_line(HTTP_VERSION, HTTP_NOT_FOUND, "Not Found", fd);
+        if (send_response_line(HTTP_VERSION, HTTP_NOT_FOUND, "Not Found", fd) == -1) {return -1;}
         len = strlen(HTTP_404_PAGE);
         body = HTTP_404_PAGE;
         break;
     case HTTP_NOT_ALLOWED:
-        send_response_line(HTTP_VERSION, HTTP_NOT_ALLOWED, "Not Allowed", fd);
+        if (send_response_line(HTTP_VERSION, HTTP_NOT_ALLOWED, "Not Allowed", fd) == -1) {return -1;}
         len = strlen(HTTP_405_PAGE);
         body = HTTP_405_PAGE;
         break;
     case HTTP_INTERNAL_SERVER_ERROR:
-        send_response_line(HTTP_VERSION, HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error", fd);
+        if (send_response_line(HTTP_VERSION, HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error", fd) == -1) {
+            return -1;
+        }
         len = strlen(HTTP_500_PAGE);
         body = HTTP_500_PAGE;
         break;
     case HTTP_NOT_IMPLEMENTED:
-        send_response_line(HTTP_VERSION, HTTP_NOT_IMPLEMENTED, "Not Implemented", fd);
+        if (send_response_line(HTTP_VERSION, HTTP_NOT_IMPLEMENTED, "Not Implemented", fd) == -1) {return -1;}
         len = strlen(HTTP_501_PAGE);
         body = HTTP_501_PAGE;
         break;
     default:    /* Default is Bad Request */
-        send_response_line(HTTP_VERSION, HTTP_BAD_REQUEST, "Bad Request", fd);
+        if (send_response_line(HTTP_VERSION, HTTP_BAD_REQUEST, "Bad Request", fd) == -1) {return -1;}
         len = strlen(HTTP_400_PAGE);
         body = HTTP_400_PAGE;
         break;
@@ -136,7 +162,7 @@ static unsigned long get_file_size(char *path)
 {
     unsigned long sz;
     FILE *fp = fopen(path, "r");
-    if (!fd) {
+    if (!fp) {
         return -1;
     }
 
@@ -145,23 +171,51 @@ static unsigned long get_file_size(char *path)
     fclose(fp);
     return sz;
 }
+
+static char *get_MMIE(const char *filename)
+{
+    char *dot = strrchr(filename, '.');
+    char *ext;
+    if (!dot || dot == filename) {
+        log_debug("no ext:%s", dot);
+        return MIME_OCTET_STREAM;
+    }
+
+    ext = dot + 1;
+    if (strcmp(ext, "html") == 0) {
+        return MIME_HTML;
+    } else if (strcmp(ext, "css") == 0) {
+        return MIME_CSS;
+    } else if (strcmp(ext, "gif") == 0) {
+        return MIME_GIF;
+    } else if (strcmp(ext, "jpeg") == 0) {
+        return MIME_JPEG;
+    } else if (strcmp(ext, "png") == 0) {
+        return MIME_PNG;
+    } else {
+        log_debug("unknown ext:%s", ext);
+        return MIME_OCTET_STREAM;
+    }
+}
+
 static int send_body_by_file(char *filepath, size_t len, int fd)
 {
     ssize_t ret;
-    FILE *filefd = fopen(filepath, "r");
-
-    if (!fd) {
+    FILE *fp = fopen(filepath, "r");
+    int filefd;
+    if (!fp) {
         return -1;
     }
     
+    filefd = fileno(fp);
     ret = sendfile(fd, filefd, NULL, len);
     if (ret == -1) {
         log_error("sendfile failed");
-        fclose(filefd);
+        fclose(fp);
         return -1;
     }
 
-    fclose(filefd);
+    fclose(fp);
     return 0;
 }
 

@@ -35,4 +35,4 @@ lisod: $(objects)
 	$(CC) $(objects) -o lisod $(CFLAGS)
 
 clean:
-	@rm lisod *.o lex.yy.c y.tab.c y.tab.h
+	@rm lisod *.o lex.yy.c y.tab.c y.tab.h y.tab.h.gch

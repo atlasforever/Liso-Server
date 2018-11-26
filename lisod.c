@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <ctype.h>
 
+#include "http_common.h"
 #include "log.h"
 #include "common.h"
 #include "parse.h"
@@ -36,7 +37,7 @@ static in_port_t http_port;
 static in_port_t https_port;
 static char *log_file;
 static char *lock_file;
-static char *www_folder;
+char *www_folder;
 static char *cgi_path;
 static char *private_key_file;
 static char *cert_file;
@@ -179,15 +180,28 @@ void proc_clients(pool *p)
                 continue;
             } else {
                 request = alloc_request();
+                if (!request) {
+                    log_error("alloc_request() failed");
+                    if (response_error(HTTP_INTERNAL_SERVER_ERROR, connfd) == -1) {
+                        log_error("Failed to send error response to sock %d", connfd);
+                    }
+                    remove_client(i, p);
+                    continue;
+                }
+
                 ret = parse(p->client_conns[i].pfsm.buf, rn, request);
                 log_debug("ret is %d", ret);
                 if (ret == 0) {
                     // success, do something
-                    response_400(connfd);
+                    do_request(request, connfd);
                 } else {
-                    response_400(connfd);
+                    // error parsing
+                    if (response_error(HTTP_BAD_REQUEST, connfd) == -1) {
+                        log_error("Failed to send error response to sock %d", connfd);
+                    }
                     remove_client(i, p);
                 }
+                free_request(request);
             }
         }
     }

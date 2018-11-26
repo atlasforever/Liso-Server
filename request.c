@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <sys/sendfile.h>
 
 #include "http_common.h"
 #include "log.h"
@@ -8,70 +9,179 @@
 #include "common.h"
 #include "request.h"
 
-#define RESPONSE_LINE_MAX_SIZE 64
-#define HEADER_MAX_SIZE 
+extern char *www_folder;
+
+const char *default_index = "index.html";
+
+static int send_body_by_file(char *filepath, int fd);
+static int send_body_by_buf(char *body, size_t len, int fd);
+static int end_headers(int fd, int hasBody);
+static int send_header(char *name, char *value, int fd);
+static int send_response_line(char *version, int code, char *phrase, int fd);
+
+
 void do_request(Request *request, int sockfd)
 {
     // Not compatible
-    if (strncmp(HTTP_VERSION, request->HTTP_VERSION, strlen(HTTP_VERSION)) != 0) {
+    if (strcmp(HTTP_VERSION, request->http_version) != 0) {
         response_error(HTTP_BAD_REQUEST, sockfd);
         return;
     }
-    if (strncmp("GET", request->http_method, 3) == 0) {
+    if (strcmp("GET", request->http_method) == 0) {
+        response_error(HTTP_NOT_FOUND, sockfd);
+    } else if (strcmp("HEAD", request->http_method) == 0) {
 
-    } else if (strncmp("HEAD", request->http_method, 4) == 0) {
-
-    } else if (strncmp("POST", request->http_method, 4) == 0) {
+    } else if (strcmp("POST", request->http_method) == 0) {
 
     } else {
         response_error(HTTP_NOT_IMPLEMENTED, sockfd);
-        return;
     }
 }
 
-
-void response_error(int code, int fd)
+static void do_GET_request(Request *request, int fd)
 {
-    char msg[64];
-    int len, ret;
+    struct tm *stm;
+    time_t now;
+    char timemsg[64];
+
+    char *path = malloc(HTTP_URI_MAX_SIZE + 256);
+    if (!path) {
+        log_error("fail to malloc in do_GET_request()");
+        response_error(HTTP_INTERNAL_SERVER_ERROR, fd);
+        return;
+    }
+
+    strcpy(path, www_folder);
+    if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
+        strcat(path, default_index);
+    } else if (request->http_uri[0] == '/') {
+        // already a slash in www_path
+        strcat(path, request->http_uri + 1);
+    } else {
+        // only support "abs_path"
+        log_info("A invalid path:%s", request->http_uri);
+        response_error(HTTP_NOT_FOUND, fd);
+        free(path);
+        return;
+    }
+    now = time(0);
+    stm = gmtime(&now);
+    strftime(timemsg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
+    if (send_header("Date", timemsg, fd) == -1) {free(path); return -1;}
+    if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
+    if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
+
+    unsigned long sz = get_file_size(path);
+    if (sz == -1) {
+        log_error("get_file_size failed");
+        free(path);
+        return;
+    }
+    free(path);
+}
+
+int response_error(int code, int fd)
+{
+    char msg[64], *body;
+    int len;
     struct tm *stm;
     time_t now;
 
     switch (code) {
-    case HTTP_BAD_REQUEST:
-    
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 400, "Bad Request");
-        break;
     case HTTP_NOT_FOUND:
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 404, "Not Found");
+        send_response_line(HTTP_VERSION, HTTP_NOT_FOUND, "Not Found", fd);
+        len = strlen(HTTP_404_PAGE);
+        body = HTTP_404_PAGE;
         break;
     case HTTP_NOT_ALLOWED:
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 405, "Not Allowed");
+        send_response_line(HTTP_VERSION, HTTP_NOT_ALLOWED, "Not Allowed", fd);
+        len = strlen(HTTP_405_PAGE);
+        body = HTTP_405_PAGE;
         break;
     case HTTP_INTERNAL_SERVER_ERROR:
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 500, "Internal Server Error");
+        send_response_line(HTTP_VERSION, HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error", fd);
+        len = strlen(HTTP_500_PAGE);
+        body = HTTP_500_PAGE;
         break;
     case HTTP_NOT_IMPLEMENTED:
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 501, "Not Implemented");
+        send_response_line(HTTP_VERSION, HTTP_NOT_IMPLEMENTED, "Not Implemented", fd);
+        len = strlen(HTTP_501_PAGE);
+        body = HTTP_501_PAGE;
         break;
-    default:
-        sprintf(msg, "%s %d %s\r\n", HTTP_VERSION, 400, "Bad Request");
+    default:    /* Default is Bad Request */
+        send_response_line(HTTP_VERSION, HTTP_BAD_REQUEST, "Bad Request", fd);
+        len = strlen(HTTP_400_PAGE);
+        body = HTTP_400_PAGE;
         break;
     }
 
     now = time(0);
     stm = gmtime(&now);
-    strftime()
-    strcat(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
-    send_header("Date", msg, fd);
-    send_header("Server", SERVER_VERSION);
+    strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
+    if (send_header("Date", msg, fd) == -1) {return -1;}
+    if (send_header("Connection", "close", fd) == -1) {return -1;}
+    if (send_header("Server", SERVER_VERSION, fd) == -1) {return -1;}
 
+    sprintf(msg, "%d", len);
+    if (send_header("Content-Length", msg, fd) == -1) {return -1;}
+    if (end_headers(fd, 1) == -1) {return -1;}
+
+    if (send_body_by_buf(body, len, fd) == -1) {return -1;}
+
+    return 0;
 }
 
-static int end_headers(int fd)
+static unsigned long get_file_size(char *path)
 {
-    NO_TEMP_FAILURE(sn = send(fd, "\r\n", 2, 0));
+    unsigned long sz;
+    FILE *fp = fopen(path, "r");
+    if (!fd) {
+        return -1;
+    }
+
+    fseek(fp, 0L, SEEK_END);
+    sz = (unsigned long)ftell(fp);
+    fclose(fp);
+    return sz;
+}
+static int send_body_by_file(char *filepath, size_t len, int fd)
+{
+    ssize_t ret;
+    FILE *filefd = fopen(filepath, "r");
+
+    if (!fd) {
+        return -1;
+    }
+    
+    ret = sendfile(fd, filefd, NULL, len);
+    if (ret == -1) {
+        log_error("sendfile failed");
+        fclose(filefd);
+        return -1;
+    }
+
+    fclose(filefd);
+    return 0;
+}
+
+static int send_body_by_buf(char *body, size_t len, int fd)
+{
+    ssize_t sn;
+
+    NO_TEMP_FAILURE(sn = send(fd, body, len, 0));
+    if (sn != len) {
+        return -1;
+    }
+    return 0;
+}
+static int end_headers(int fd, int hasBody)
+{
+    ssize_t sn;
+    int flags;
+
+    flags = hasBody? MSG_MORE : 0;
+    NO_TEMP_FAILURE(sn = send(fd, "\r\n", 2, flags));
     if (sn != 2) {
         return -1;
     }
@@ -81,7 +191,7 @@ static int send_header(char *name, char *value, int fd)
 {
     int nl = strlen(name);
     int vl = strlen(value); 
-    int sn;
+    ssize_t sn;
 
     NO_TEMP_FAILURE(sn = send(fd, name, nl, MSG_MORE));
     if (sn != nl) {
@@ -109,7 +219,7 @@ static int send_response_line(char *version, int code, char *phrase, int fd)
     char cstr[6];
     int vl = strlen(version);
     int pl = strlen(phrase);
-    int sn;
+    ssize_t sn;
 
     NO_TEMP_FAILURE(sn = send(fd, version, vl, MSG_MORE));
     if (sn != vl) {

@@ -29,7 +29,7 @@ log.o: log.c log.h common.h
 parse.o: parse.c parse.h common.h log.h
 request.o: request.c http_common.h parse.h common.h request.h
 y.tab.o: y.tab.c parse.h
-
+	$(CC) $^ -c
 
 lisod: $(objects)
 	$(CC) $(objects) -o lisod $(CFLAGS)

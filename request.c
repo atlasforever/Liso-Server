@@ -64,6 +64,10 @@ static int do_GET_request(Request *request, int fd)
     }
     // make file path
     strcpy(path, www_folder);
+    // the folder should end with '/'
+    if (path[strlen(path) - 1] != '/') {
+        strcat(path, "/");
+    }
     if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
         strcat(path, default_index);
     } else if (request->http_uri[0] == '/') {

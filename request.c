@@ -19,6 +19,7 @@ const char *default_index = "index.html";
 
 static int do_GET_request(Request *request, int fd);
 static int do_HEAD_request(Request *request, int fd);
+static int do_POST_request(Request *request, int fd);
 static int send_body_by_file(char *filepath, size_t len, int fd);
 static int send_body_by_buf(char *body, size_t len, int fd);
 static int end_headers(int fd, int hasBody);
@@ -31,20 +32,20 @@ static int get_mtime(const char *path, time_t *mt);
 
 int do_request(Request *request, int sockfd)
 {
-    // Not compatible
+    // Not compatible with HTTP 1.0
     if (strcmp(HTTP_VERSION, request->http_version) != 0) {
         response_error(HTTP_BAD_REQUEST, sockfd);
     }
+
     if (strcmp("GET", request->http_method) == 0) {
         return do_GET_request(request, sockfd);
     } else if (strcmp("HEAD", request->http_method) == 0) {
         return do_HEAD_request(request, sockfd);
     } else if (strcmp("POST", request->http_method) == 0) {
-
-    } else {
-        response_error(HTTP_NOT_IMPLEMENTED, sockfd);
+        return do_POST_request(request, sockfd);
     }
-    return 0;
+
+    return response_error(HTTP_NOT_IMPLEMENTED, sockfd);
 }
 
 /* 0: ok. 
@@ -57,14 +58,18 @@ static int do_GET_request(Request *request, int fd)
     char msg[35], mtbuf[35];
     unsigned long sz;
 
+    log_info("A GET Request");
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
     if (!path) {
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
         return 0;
     }
-    // make file path
+
+    /* Generate the actual file path */
     strcpy(path, www_folder);
     // the folder should end with '/'
+    log_debug("path is:%s", path);
+    log_debug("uri is:%s", request->http_uri);
     if (path[strlen(path) - 1] != '/') {
         strcat(path, "/");
     }
@@ -81,6 +86,7 @@ static int do_GET_request(Request *request, int fd)
         return 0;
     }
 
+    log_debug("finnaly, path is:%s", path);
     if (access(path, F_OK | R_OK) != 0) {
         log_debug("fail to read this file:%s", path);
         free(path);
@@ -126,17 +132,7 @@ static int do_GET_request(Request *request, int fd)
     return 0;
 }
 
-static int get_mtime(const char *path, time_t *mt)
-{
-    struct stat sb;
-
-    if (stat(path, &sb) == -1) {
-        return -1;
-    }
-    *mt = sb.st_mtime;
-    return 0;
-}
-
+/* Just copy-and-paste from do_GET_request() */
 static int do_HEAD_request(Request *request, int fd)
 {
     struct tm *stm;
@@ -144,13 +140,21 @@ static int do_HEAD_request(Request *request, int fd)
     char msg[35], mtbuf[35];
     unsigned long sz;
 
+    log_info("A HEAD Request");
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
     if (!path) {
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
         return 0;
     }
-    // make file path
+
+    /* Generate the actual file path */
     strcpy(path, www_folder);
+    // the folder should end with '/'
+    log_debug("path is:%s", path);
+    log_debug("uri is:%s", request->http_uri);
+    if (path[strlen(path) - 1] != '/') {
+        strcat(path, "/");
+    }
     if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
         strcat(path, default_index);
     } else if (request->http_uri[0] == '/') {
@@ -163,7 +167,7 @@ static int do_HEAD_request(Request *request, int fd)
         if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
         return 0;
     }
-
+    
     if (access(path, F_OK | R_OK) != 0) {
         log_debug("fail to read this file:%s", path);
         free(path);
@@ -189,7 +193,7 @@ static int do_HEAD_request(Request *request, int fd)
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
         return 0;
     }
-    stm = gmtime(&now);
+    stm = gmtime(&mtime);
     strftime(mtbuf, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
 
@@ -208,6 +212,16 @@ static int do_HEAD_request(Request *request, int fd)
     return 0;
 }
 
+static int do_POST_request(Request *request, int fd)
+{
+    Request_header *first_hdr = request->headers->next;
+    
+    for (Request_header *cur = first_hdr; cur; cur = cur->next) {
+        log_debug("Name is %s", cur->header_name);
+        log_debug("Value is %s", cur->header_value);
+    }
+    return 0;
+}
 int response_error(int code, int fd)
 {
     char msg[64], *body;
@@ -262,6 +276,17 @@ int response_error(int code, int fd)
     return 0;
 }
 
+
+static int get_mtime(const char *path, time_t *mt)
+{
+    struct stat sb;
+
+    if (stat(path, &sb) == -1) {
+        return -1;
+    }
+    *mt = sb.st_mtime;
+    return 0;
+}
 static unsigned long get_file_size(char *path)
 {
     unsigned long sz;

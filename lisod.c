@@ -27,7 +27,6 @@
 #include "parse.h"
 #include "request.h"
 
-#define ECHO_PORT 9999
 #define BUF_SIZE 4096
 #define MAX_CLIENTS \
     (FD_SETSIZE - 1) // leave one select-fd for server's listenfd
@@ -196,6 +195,7 @@ void proc_clients(pool *p)
                     // success, do something
                     ret = do_request(request, connfd);
                     if (ret == -1) {
+                        log_error("do_request() failed");
                         remove_client(i, p);
                     }
                 } else { // error parsing
@@ -263,7 +263,7 @@ static int open_listenfd()
     }
 
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(ECHO_PORT);
+    addr.sin_port = htons(http_port);
     addr.sin_addr.s_addr = INADDR_ANY;
     /* servers bind sockets to ports---notify the OS they accept connections */
     if (bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {

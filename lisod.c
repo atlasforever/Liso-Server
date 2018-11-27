@@ -83,6 +83,8 @@ void init_pool(int listenfd, pool* p)
 
 void add_client(int clientfd, pool* p)
 {
+    log_info("Add a new client fd:%d", clientfd);
+
     int i;
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (p->clientfds[i] == -1) {
@@ -177,7 +179,7 @@ void proc_clients(pool *p)
             } else if (rn == 0) {
                 log_debug("continue");
                 continue;
-            } else {
+            } else {    // OK
                 request = alloc_request();
                 if (!request) {
                     log_error("alloc_request() failed");
@@ -321,6 +323,7 @@ int main(int argc, char* argv[])
         {
             cli_size = sizeof(cli_addr);
             NO_TEMP_FAILURE(client_sock = accept(sock, (struct sockaddr*)&cli_addr, &cli_size));
+            log_debug("new connection:%d", client_sock);
             if (client_sock == -1)
             {
                 log_error("accept, errno is %d", errno);

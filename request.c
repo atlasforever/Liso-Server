@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -25,6 +26,8 @@ static int send_header(char *name, char *value, int fd);
 static int send_response_line(char *version, int code, char *phrase, int fd);
 static unsigned long get_file_size(char *path);
 static char *get_MMIE(const char *filename);
+static int get_mtime(const char *path, time_t *mt);
+
 
 int do_request(Request *request, int sockfd)
 {
@@ -50,8 +53,8 @@ int do_request(Request *request, int sockfd)
 static int do_GET_request(Request *request, int fd)
 {
     struct tm *stm;
-    time_t now;
-    char msg[64];
+    time_t now, mtime;
+    char msg[35], mtbuf[35];
     unsigned long sz;
 
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
@@ -73,10 +76,6 @@ static int do_GET_request(Request *request, int fd)
         if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
         return 0;
     }
-    // get time
-    now = time(0);
-    stm = gmtime(&now);
-    strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
     if (access(path, F_OK | R_OK) != 0) {
         log_debug("fail to read this file:%s", path);
@@ -91,13 +90,31 @@ static int do_GET_request(Request *request, int fd)
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
         return 0;
     }
-    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}
+
+    // get time. gmtime() is NOT thread safe
+    now = time(0);
+    stm = gmtime(&now);
+    strftime(msg, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
+    
+    // last modified
+    if (get_mtime(path, &mtime) == -1) {
+        free(path);
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
+        return 0;
+    }
+    stm = gmtime(&mtime);
+    strftime(mtbuf, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
+
+
+
+    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}  
     if (send_header("Date", msg, fd) == -1) {free(path); return -1;}
     if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
     if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
     sprintf(msg, "%ld", sz);
     if (send_header("Content-Length", msg, fd) == -1) {free(path); return -1;}
     if (send_header("Content-Type", get_MMIE(path), fd) == -1) {free(path); return -1;}
+    if (send_header("Last-Modified", mtbuf, fd) == -1) {free(path); return -1;}
     if (end_headers(fd, 1) == -1) {free(path); return -1;}
     if (send_body_by_file(path, sz, fd) == -1) {free(path); return -1;}
 
@@ -105,12 +122,22 @@ static int do_GET_request(Request *request, int fd)
     return 0;
 }
 
+static int get_mtime(const char *path, time_t *mt)
+{
+    struct stat sb;
+
+    if (stat(path, &sb) == -1) {
+        return -1;
+    }
+    *mt = sb.st_mtime;
+    return 0;
+}
 
 static int do_HEAD_request(Request *request, int fd)
 {
-   struct tm *stm;
-    time_t now;
-    char msg[64];
+    struct tm *stm;
+    time_t now, mtime;
+    char msg[35], mtbuf[35];
     unsigned long sz;
 
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
@@ -132,10 +159,6 @@ static int do_HEAD_request(Request *request, int fd)
         if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
         return 0;
     }
-    // get time
-    now = time(0);
-    stm = gmtime(&now);
-    strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
     if (access(path, F_OK | R_OK) != 0) {
         log_debug("fail to read this file:%s", path);
@@ -150,17 +173,35 @@ static int do_HEAD_request(Request *request, int fd)
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
         return 0;
     }
-    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}
+
+    // get time. gmtime() is NOT thread safe
+    now = time(0);
+    stm = gmtime(&now);
+    strftime(msg, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
+    
+    // last modified
+    if (get_mtime(path, &mtime) == -1) {
+        free(path);
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
+        return 0;
+    }
+    stm = gmtime(&now);
+    strftime(mtbuf, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
+
+
+
+    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}  
     if (send_header("Date", msg, fd) == -1) {free(path); return -1;}
     if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
     if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
     sprintf(msg, "%ld", sz);
     if (send_header("Content-Length", msg, fd) == -1) {free(path); return -1;}
     if (send_header("Content-Type", get_MMIE(path), fd) == -1) {free(path); return -1;}
+    if (send_header("Last-Modified", mtbuf, fd) == -1) {free(path); return -1;}
     if (end_headers(fd, 1) == -1) {free(path); return -1;}
 
     free(path);
-    return 0; 
+    return 0;
 }
 
 int response_error(int code, int fd)

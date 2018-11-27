@@ -17,6 +17,7 @@ extern char *www_folder;
 const char *default_index = "index.html";
 
 static int do_GET_request(Request *request, int fd);
+static int do_HEAD_request(Request *request, int fd);
 static int send_body_by_file(char *filepath, size_t len, int fd);
 static int send_body_by_buf(char *body, size_t len, int fd);
 static int end_headers(int fd, int hasBody);
@@ -34,7 +35,7 @@ int do_request(Request *request, int sockfd)
     if (strcmp("GET", request->http_method) == 0) {
         return do_GET_request(request, sockfd);
     } else if (strcmp("HEAD", request->http_method) == 0) {
-
+        return do_HEAD_request(request, sockfd);
     } else if (strcmp("POST", request->http_method) == 0) {
 
     } else {
@@ -102,6 +103,64 @@ static int do_GET_request(Request *request, int fd)
 
     free(path);
     return 0;
+}
+
+
+static int do_HEAD_request(Request *request, int fd)
+{
+   struct tm *stm;
+    time_t now;
+    char msg[64];
+    unsigned long sz;
+
+    char *path = malloc(HTTP_URI_MAX_SIZE + 256);
+    if (!path) {
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
+        return 0;
+    }
+    // make file path
+    strcpy(path, www_folder);
+    if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
+        strcat(path, default_index);
+    } else if (request->http_uri[0] == '/') {
+        // already a slash in www_path
+        strcat(path, request->http_uri + 1);
+    } else {
+        // only support "abs_path"
+        log_info("A invalid path:%s", request->http_uri);
+        free(path);
+        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
+        return 0;
+    }
+    // get time
+    now = time(0);
+    stm = gmtime(&now);
+    strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
+
+    if (access(path, F_OK | R_OK) != 0) {
+        log_debug("fail to read this file:%s", path);
+        free(path);
+        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
+        return 0;
+    }
+    sz = get_file_size(path);
+    if (sz == -1) {
+        log_error("get_file_size failed");
+        free(path);
+        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
+        return 0;
+    }
+    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}
+    if (send_header("Date", msg, fd) == -1) {free(path); return -1;}
+    if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
+    if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
+    sprintf(msg, "%ld", sz);
+    if (send_header("Content-Length", msg, fd) == -1) {free(path); return -1;}
+    if (send_header("Content-Type", get_MMIE(path), fd) == -1) {free(path); return -1;}
+    if (end_headers(fd, 1) == -1) {free(path); return -1;}
+
+    free(path);
+    return 0; 
 }
 
 int response_error(int code, int fd)

@@ -4,9 +4,12 @@ You can use git'*tag* to check 3 different checkpoints!
 
 
 # Checkpoint 2
-The main program structure is in `lisod.c`
-Logging module is in `log.c`
-Parsing module in `parse.c`, `parser.y` and `lexer.l`
+The main program structure is in `lisod.c`.
+
+Logging module is in `log.c`.
+
+Parsing module in `parse.c`, `parser.y` and `lexer.l`.
+
 GET, POST, HEAD methods are handled in `request.c`.
 
 Test Result:

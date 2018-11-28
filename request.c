@@ -28,6 +28,8 @@ static int send_response_line(char *version, int code, char *phrase, int fd);
 static unsigned long get_file_size(char *path);
 static char *get_MMIE(const char *filename);
 static int get_mtime(const char *path, time_t *mt);
+static char* get_header_value(Request *request, const char *name);
+
 
 
 int do_request(Request *request, int sockfd)
@@ -49,6 +51,7 @@ int do_request(Request *request, int sockfd)
 }
 
 /* 0: ok. 
+ * 1: ok. client wants to close the connection
  * -1: error. Need to close the connection
  */
 static int do_GET_request(Request *request, int fd)
@@ -129,7 +132,13 @@ static int do_GET_request(Request *request, int fd)
     if (send_body_by_file(path, sz, fd) == -1) {free(path); return -1;}
 
     free(path);
-    return 0;
+
+    char *v = get_header_value(request, "Connection");
+    if (!v || strcmp(v, "close") == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 /* Just copy-and-paste from do_GET_request() */
@@ -209,19 +218,58 @@ static int do_HEAD_request(Request *request, int fd)
     if (end_headers(fd, 1) == -1) {free(path); return -1;}
 
     free(path);
-    return 0;
+    char *v = get_header_value(request, "Connection");
+    if (!v || strcmp(v, "close") == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 static int do_POST_request(Request *request, int fd)
 {
     Request_header *first_hdr = request->headers->next;
-    
+    char *v;
+    char nouse[256];
+    long len, rn = 0, total = 0;
+
+    log_info("A POST Request");
     for (Request_header *cur = first_hdr; cur; cur = cur->next) {
         log_debug("Name is %s", cur->header_name);
         log_debug("Value is %s", cur->header_value);
     }
-    return 0;
+
+    // A dummy POST request handler. I will finish the real work with the CGI part in Checkpoint3
+
+    // we do no thing
+    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {return -1;}
+    if (end_headers(fd, 1) == -1) {return -1;}
+
+
+    v = get_header_value(request, "Content-Length");
+    if (!v || (len = atoi(v) <= 0)) {
+        // do nothing
+    } else {    // abandon the body
+        while (total < len) {
+            NO_TEMP_FAILURE(rn = recv(fd, nouse, 256, 0));
+            if (rn == -1) {
+                return -1;
+            } else if (rn == 0) {
+                continue;
+            } else {
+                total += rn;
+            }
+        }
+    }
+
+    v = get_header_value(request, "Connection");
+    if (!v || strcmp(v, "close") == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
+
 int response_error(int code, int fd)
 {
     char msg[64], *body;
@@ -276,7 +324,17 @@ int response_error(int code, int fd)
     return 0;
 }
 
+static char* get_header_value(Request *request, const char *name)
+{
+    Request_header *cur = request->headers->next;
 
+    for (; cur; cur = cur->next) {
+        if (strcmp(name, cur->header_name) == 0) {
+            return cur->header_value;
+        }
+    }
+    return NULL;
+}
 static int get_mtime(const char *path, time_t *mt)
 {
     struct stat sb;

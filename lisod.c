@@ -174,6 +174,7 @@ void proc_clients(pool *p)
             p->nready--;
             rn = recv_one_request(&p->client_conns[i].pfsm, connfd);
             if (rn == -1) {
+                response_error(HTTP_BAD_REQUEST, connfd);
                 remove_client(i, p);
             } else if (rn == 0) {
                 log_debug("continue");
@@ -190,12 +191,11 @@ void proc_clients(pool *p)
                 }
 
                 ret = parse(p->client_conns[i].pfsm.buf, rn, request);
-                log_debug("ret is %d", ret);
-                if (ret == 0) {
-                    // success, do something
+                log_debug("parse() return %d", ret);
+                if (ret == 0) { // success
                     ret = do_request(request, connfd);
-                    if (ret == -1) {
-                        log_error("do_request() failed");
+                    log_debug("do_request return %d", ret);
+                    if (ret != 0) {
                         remove_client(i, p);
                     }
                 } else { // error parsing

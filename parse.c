@@ -44,7 +44,7 @@ int parse(char* buffer, int size, Request* request)
  * 
  * Return value: n
  * n > 0: Finishing reading a whole request. Size is n
- * 0: Reading is NOT yet completed
+ * 0: Reading is NOT yet completed. Wait to be called nex time.
  * -1: Fail. Maybe caller should close the socket.
  */
 int recv_one_request(parse_fsm *fsm, int sock)

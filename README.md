@@ -1,7 +1,6 @@
-usage:
-./lisod <HTTP  port> <HTTPS  port> <log  file> <lock  file> <www  folder><CGI script path> <private key file> <certificate file>
+15-441 F16 Project
 
-You can use *tag* to check 3 different checkpoints!
+You can use git'*tag* to check 3 different checkpoints!
 
 
 # Checkpoint 2

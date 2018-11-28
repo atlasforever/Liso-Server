@@ -1,72 +1,39 @@
-################################################################################
-# README                                                                       #
-#                                                                              #
-# Description: This file serves as a README and documentation for CP1 starter. #
-#                                                                              #
-# Authors: Athula Balachandran <abalacha@cs.cmu.edu>,                          #
-#          Wolf Richter <wolf@cs.cmu.edu>                                      #
-#                                                                              #
-################################################################################
+usage:
+./lisod <HTTP  port> <HTTPS  port> <log  file> <lock  file> <www  folder><CGI script path> <private key file> <certificate file>
+
+You can use *tag* to check 3 different checkpoints!
 
 
+# Checkpoint 2
+The main program structure is in `lisod.c`
+Logging module is in `log.c`
+Parsing module in `parse.c`, `parser.y` and `lexer.l`
+GET, POST, HEAD methods are handled in `request.c`.
 
+Test Result:
+```
+./lisod 1917 4981 ./lisod.log ../tmp/lisod.lock ../tmp/www ../tmp/cgi/cgi_script.py ../tmp/grader.key ../tmp/grader.crt
+Wait 2 seconds.
+Server is running
+ok
+test_HEAD_headers (__main__.project1cp2tester) ... ----- Testing Headers -----
+ok
+test_HEAD (__main__.project1cp2tester) ... ----- Testing HEAD -----
+ok
+test_GET (__main__.project1cp2tester) ... ----- Testing GET -----
+ok
+test_POST (__main__.project1cp2tester) ... ----- Testing POST -----
+ok
+test_bad (__main__.project1cp2tester) ... ----- Testing Bad Requests-----
+ok
+test_big (__main__.project1cp2tester) ... ----- Testing Big file -----
+ok
+test_kill (__main__.project1cp2tester) ... kill it
+ok
 
-[TOC-1] Table of Contents
---------------------------------------------------------------------------------
+----------------------------------------------------------------------
+Ran 11 tests in 19.241s
 
-        [TOC-1] Table of Contents
-        [DES-2] Description of Files
-        [RUN-3] How to Run
-
-
-
-
-[DES-2] Description of Files
---------------------------------------------------------------------------------
-
-Here is a listing of all files associated with Recitation 1 and what their'
-purpose is:
-
-                    .../README                  - Current document 
-                    .../src/echo_client.c       - Simple echo network client
-                    .../src/echo_server.c       - Simple echo network server
-                    .../src/Makefile            - Contains rules for make
-                    .../src/cp1_checker.py      - Python test script for CP1
-
-
-
-
-[RUN-3] How to Run
---------------------------------------------------------------------------------
-
-Building and executing the echo code should be very simple:
-
-                    cd src
-                    make
-                    ./echo_server
-                    ./echo_client localhost 9999
-
-This should allow you to input characters on stdin which will be sent to the
-echo server.  The echo server has a hard-coded serving port of 9999.  Any input
-characters to stdin will be flushed to the server on return, and any bytes
-received from the server will appear on stdout.
-
-In addition, a telnet client may also be used in a similar fashion for
-communicating with the server:
-
-                    cd src
-                    make
-                    ./echo_server
-                    telnet localhost 9999
-
-The test Python script takes a series of arguments and can be run as:
-
-                    cd src
-                    make
-                    ./echo_server
-                    ./cp1_checker 127.0.0.1 9999 1000 10 2048 500
-
-with arguments as such:
-
-                    <ip> <port> <# trials> <# writes and reads per trial> \
-                    <max # bytes to write at a time> <# connections> 
+OK
+{"scores": {"test_make": 1, "test_HEAD_headers": 1, "test_POST": 1, "server_start": 1, "test_git": 1, "use_select": 1, "test_big": 1, "test_bad": 1, "test_GET": 1, "test_HEAD": 1}}
+```

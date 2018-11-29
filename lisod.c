@@ -11,19 +11,23 @@
  *                                                                             *
  *******************************************************************************/
 
+#include <ctype.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <ctype.h>
 
+#include "common.h"
 #include "http_common.h"
 #include "log.h"
-#include "common.h"
 #include "parse.h"
 #include "request.h"
 
@@ -34,12 +38,12 @@
 /* Command line arguments */
 static in_port_t http_port;
 static in_port_t https_port;
-static char *log_file;
-static char *lock_file;
-char *www_folder;
-static char *cgi_path;
-static char *private_key_file;
-static char *cert_file;
+static char* log_file;
+static char* lock_file;
+char* www_folder;
+static char* cgi_path;
+static char* private_key_file;
+static char* cert_file;
 
 /* Information about a connection */
 typedef struct {
@@ -56,6 +60,11 @@ typedef struct {
     int clientfds[MAX_CLIENTS];
     client_conn client_conns[MAX_CLIENTS];
 } pool;
+
+/* Declarations */
+static void liso_shutdown(pool* pool, int status);
+int daemonize(char* lock_file);
+
 
 int close_socket(int sock)
 {
@@ -133,12 +142,12 @@ static void update_rmed_maxfd(pool* p)
     p->maxfd = maxfd;
 }
 
-void remove_client(int old_idx, pool *p)
+void remove_client(int old_idx, pool* p)
 {
     if (p->clientfds[old_idx] == -1) {
         return;
     }
-    
+
     int old_fd = p->clientfds[old_idx];
     log_info("Remove one client, fd is %d", old_fd);
     close_socket(old_fd);
@@ -154,16 +163,15 @@ void remove_client(int old_idx, pool *p)
 }
 
 /* we can assume the fd is avaliable */
-void proc_one_client(int idx, pool *p)
+void proc_one_client(int idx, pool* p)
 {
-
 }
 
-void proc_clients(pool *p)
+void proc_clients(pool* p)
 {
     int connfd;
     ssize_t rn;
-    Request *request;
+    Request* request;
     int ret;
 
     for (int i = 0; (i <= p->maxci) && (p->nready > 0); i++) {
@@ -179,7 +187,7 @@ void proc_clients(pool *p)
             } else if (rn == 0) {
                 log_debug("continue");
                 continue;
-            } else {    // OK
+            } else { // OK
                 request = alloc_request();
                 if (!request) {
                     log_error("alloc_request() failed");
@@ -210,23 +218,18 @@ void proc_clients(pool *p)
     }
 }
 
-void close_all_clients(pool *p)
-{
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (p->clientfds[i] != -1) {
-            remove_client(i, p);
-        }
-    }
-}
-
 static int proc_cmd_line_args(int argc, char* argv[])
 {
     if (argc != 9) {
         return -1;
     }
     /* wrong if atoi error or the number itself is 0 */
-    if ((http_port = (in_port_t)atoi(argv[1])) == 0) {return -1;}
-    if ((https_port = (in_port_t)atoi(argv[2])) == 0) {return -1;}
+    if ((http_port = (in_port_t)atoi(argv[1])) == 0) {
+        return -1;
+    }
+    if ((https_port = (in_port_t)atoi(argv[2])) == 0) {
+        return -1;
+    }
     log_file = argv[3];
     lock_file = argv[4];
     www_folder = argv[5];
@@ -234,21 +237,6 @@ static int proc_cmd_line_args(int argc, char* argv[])
     private_key_file = argv[7];
     cert_file = argv[8];
 
-    return 0;
-}
-
-static int init(int argc, char* argv[])
-{
-    if (proc_cmd_line_args(argc, argv) == -1) {
-        fprintf(stderr, "Please input right cmd args\n");
-        return -1;
-    }
-    if (init_log(log_file) == -1) {
-        fprintf(stderr, "init_log failed\n");
-        return -1;
-    }
-
-    
     return 0;
 }
 
@@ -286,12 +274,15 @@ int main(int argc, char* argv[])
     struct sockaddr_in cli_addr;
 
     static pool pool;
-    /* init all */
-    if (init(argc, argv) == -1) {exit(EXIT_FAILURE);}
+
+    /* Initialize */
     if (proc_cmd_line_args(argc, argv) == -1) {
         fprintf(stderr, "Please input right cmd args\n");
         exit(EXIT_FAILURE);
     }
+
+    daemonize(lock_file);
+
     if (init_log(log_file) == -1) {
         fprintf(stderr, "init_log failed\n");
         exit(EXIT_FAILURE);
@@ -302,21 +293,17 @@ int main(int argc, char* argv[])
     }
     init_pool(sock, &pool);
 
-
     log_info("------------Lisod Starts------------");
     /* finally, loop waiting for input and then write it back */
     while (1) {
         pool.ready_set = pool.read_set;
         /* restart from EINTR */
-        NO_TEMP_FAILURE(pool.nready = select(pool.maxfd + 1, 
-                                    &(pool.ready_set), NULL, NULL, NULL));
+        NO_TEMP_FAILURE(pool.nready = select(pool.maxfd + 1,
+                            &(pool.ready_set), NULL, NULL, NULL));
         if (pool.nready == -1) // Fatal error
         {
-            close_all_clients(&pool);
-            close_socket(sock);
             log_error("select");
-            close_log();
-            exit(EXIT_FAILURE);
+            liso_shutdown(&pool, EXIT_FAILURE);
         }
 
         if (FD_ISSET(sock, &(pool.ready_set))) // a client tries to connect
@@ -324,14 +311,10 @@ int main(int argc, char* argv[])
             cli_size = sizeof(cli_addr);
             NO_TEMP_FAILURE(client_sock = accept(sock, (struct sockaddr*)&cli_addr, &cli_size));
             log_debug("new connection:%d", client_sock);
-            if (client_sock == -1)
-            {
+            if (client_sock == -1) {
                 log_error("accept, errno is %d", errno);
-                if (errno != EMFILE) {  // skip it if too many fd opened
-                    close_all_clients(&pool);
-                    close_socket(sock);
-                    close_log();
-                    exit(EXIT_FAILURE);
+                if (errno != EMFILE) { // skip it if too many fds opened
+                    liso_shutdown(&pool, EXIT_FAILURE);
                 }
             } else {
                 add_client(client_sock, &pool);
@@ -340,8 +323,84 @@ int main(int argc, char* argv[])
         proc_clients(&pool);
     }
 
-    close_all_clients(&pool);
-    close_socket(sock);
+    liso_shutdown(&pool, EXIT_SUCCESS);
+}
+
+static void liso_shutdown(pool* pool, int status)
+{
+    if (pool->listenfd != -1) {
+        close_socket(pool->listenfd);
+    }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (pool->clientfds[i] != -1) {
+            remove_client(i, pool);
+        }
+    }
     close_log();
+    exit(status);
+}
+/***** Utility Functions *****/
+
+/**
+ * internal signal handler
+ */
+void signal_handler(int sig)
+{
+    switch (sig) {
+    case SIGHUP:
+        /* rehash the server */
+        break;
+    case SIGTERM:
+        /* finalize and shutdown the server */
+        // TODO: liso_shutdown(NULL, EXIT_SUCCESS);
+        break;
+    default:
+        break;
+        /* unhandled signal */
+    }
+}
+
+/** 
+ * internal function daemonizing the process
+ */
+int daemonize(char* lock_file)
+{
+    /* drop to having init() as parent */
+    int i, lfp, pid = fork();
+    char str[256] = { 0 };
+    if (pid < 0)
+        exit(EXIT_FAILURE);
+    if (pid > 0)
+        exit(EXIT_SUCCESS);
+
+    setsid();
+
+    for (i = getdtablesize(); i >= 0; i--)
+        close(i);
+
+    i = open("/dev/null", O_RDWR);
+    dup(i); /* stdout */
+    dup(i); /* stderr */
+    umask(027);
+
+    lfp = open(lock_file, O_RDWR | O_CREAT, 0640);
+
+    if (lfp < 0)
+        exit(EXIT_FAILURE); /* can not open */
+
+    if (lockf(lfp, F_TLOCK, 0) < 0)
+        exit(EXIT_SUCCESS); /* can not lock */
+
+    /* only first instance continues */
+    sprintf(str, "%d\n", getpid());
+    write(lfp, str, strlen(str)); /* record pid to lockfile */
+
+    signal(SIGCHLD, SIG_IGN); /* child terminate signal */
+
+    signal(SIGHUP, signal_handler); /* hangup signal */
+    signal(SIGTERM, signal_handler); /* software termination signal from kill */
+
+    // TODO: log --> "Successfully daemonized lisod process, pid %d."
+
     return EXIT_SUCCESS;
 }

@@ -6,6 +6,7 @@
 
 %{
 #include "parse.h"
+#include "request.h"
 
 /* Define YACCDEBUG to enable debug messages for this lex file */
 //#define YACCDEBUG

@@ -24,10 +24,10 @@ y.tab.c: parser.y
 # Automatically generated
 lex.yy.o: lex.yy.c y.tab.h
 	$(CC) $^ -c
-lisod.o: lisod.c log.h common.h parse.h request.h
+lisod.o: lisod.c common.h http_common.h log.h parse.h request.h
 log.o: log.c log.h common.h
-parse.o: parse.c parse.h common.h log.h
-request.o: request.c http_common.h parse.h common.h request.h
+parse.o: parse.c parse.h request.h common.h log.h
+request.o: request.c http_common.h log.h parse.h request.h common.h
 y.tab.o: y.tab.c parse.h
 	$(CC) $^ -c
 

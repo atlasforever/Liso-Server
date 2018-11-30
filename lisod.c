@@ -25,6 +25,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <openssl/ssl.h>
+
 #include "common.h"
 #include "http_common.h"
 #include "log.h"
@@ -33,7 +35,7 @@
 
 #define BUF_SIZE 4096
 #define MAX_CLIENTS \
-    (FD_SETSIZE - 1) // leave one select-fd for server's listenfd
+    (FD_SETSIZE - 2) // leave 2 select-fd for HTTP and HTTPS ports
 
 /* Command line arguments */
 static in_port_t http_port;
@@ -47,8 +49,12 @@ static char* cert_file;
 
 /* Information about a connection */
 typedef struct {
+    int is_https;
+    SSL *client_context;
+
+    int sockfd;   // (-1) when this client doesn't exist
     parse_fsm pfsm;
-} client_conn;
+} http_client;
 
 typedef struct {
     int maxfd;
@@ -56,13 +62,17 @@ typedef struct {
     fd_set ready_set;
     int nready;
     int maxci;
-    int listenfd;
-    int clientfds[MAX_CLIENTS];
-    client_conn client_conns[MAX_CLIENTS];
-} pool;
+
+    SSL_CTX *ssl_ctx;
+    
+    int httpfd;
+    int httpsfd;
+    http_client clients[MAX_CLIENTS];
+} client_pool;
+client_pool pool;
 
 /* Declarations */
-static void liso_shutdown(pool* pool, int status);
+static void liso_shutdown(int status);
 int daemonize(char* lock_file);
 
 
@@ -75,32 +85,62 @@ int close_socket(int sock)
     return 0;
 }
 
-void init_pool(int listenfd, pool* p)
+static void init_pool(int httpfd, int httpsfd, client_pool* p)
 {
     /* no clients initially */
     p->maxci = -1;
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        p->clientfds[i] = -1;
+        p->clients[i].sockfd = -1;
+        p->clients[i].is_https = 0;
     }
 
-    p->maxfd = listenfd;
-    p->listenfd = listenfd;
+    p->maxfd = httpfd > httpsfd ? httpfd : httpsfd;
+    p->httpfd = httpfd;
+    p->httpsfd = httpsfd;
     FD_ZERO(&(p->read_set));
-    FD_SET(listenfd, &(p->read_set));
+    FD_SET(httpfd, &(p->read_set));
+    FD_SET(httpsfd, &(p->read_set));
 }
 
-void add_client(int clientfd, pool* p)
+static int init_ssl(const char *key, const char *cert, client_pool *p)
+{
+    SSL_load_error_strings();
+    SSL_library_init();
+
+    /* we want to use TLSv1 only */
+    if ((p->ssl_ctx = SSL_CTX_new(TLSv1_server_method())) == NULL) {
+        log_error("Error creating SSL context.");
+        return -1;
+    }
+
+    /* register private key */
+    if (SSL_CTX_use_PrivateKey_file(p->ssl_ctx, key, SSL_FILETYPE_PEM) == 0) {
+        SSL_CTX_free(p->ssl_ctx);
+        log_error("Error associating private key.");
+        return -1;
+    }
+
+    /* register public key (certificate) */
+    if (SSL_CTX_use_certificate_file(p->ssl_ctx, cert, SSL_FILETYPE_PEM) == 0) {
+        SSL_CTX_free(p->ssl_ctx);
+        log_error("Error associating certificate.");
+        return -1;
+    }
+
+    return 0;
+}
+int add_client(int clientfd, int is_https, client_pool* p)
 {
     log_info("Add a new client fd:%d", clientfd);
 
     int i;
     for (i = 0; i < MAX_CLIENTS; i++) {
-        if (p->clientfds[i] == -1) {
+        if (p->clients[i].sockfd == -1) {
             p->nready--;
-            p->clientfds[i] = clientfd;
-
+            p->clients[i].sockfd = clientfd;
+            p->clients[i].is_https = is_https;
             // initialize for persistent connection
-            init_parse_fsm(&(p->client_conns[i].pfsm));
+            init_parse_fsm(&(p->clients[i].pfsm));
 
             FD_SET(clientfd, &(p->read_set));
             if (i > p->maxci) {
@@ -109,50 +149,50 @@ void add_client(int clientfd, pool* p)
             if (clientfd > p->maxfd) {
                 p->maxfd = clientfd;
             }
-            break;
         }
     }
     if (i == FD_SETSIZE) {
         log_info("Too many clients");
+        return -1;
     }
-    return;
+    return 0;
 }
 
-static void update_rmed_maxci(pool* p)
+static void update_rmed_maxci(client_pool* p)
 {
     int maxi = -1;
 
     for (int i = 0; i < p->maxci; i++) {
-        if (p->clientfds[i] != -1) {
+        if (p->clients[i].sockfd != -1) {
             maxi = i;
         }
     }
     p->maxci = maxi;
 }
-static void update_rmed_maxfd(pool* p)
+static void update_rmed_maxfd(client_pool* p)
 {
-    int maxfd = p->listenfd;
+    int maxfd = p->httpfd > p->httpsfd ? p->httpfd : p->httpsfd;
     for (int i = 0; i <= p->maxci; i++) {
-        if (p->clientfds[i] != -1) {
-            if (p->clientfds[i] > maxfd) {
-                maxfd = p->clientfds[i];
+        if (p->clients[i].sockfd != -1) {
+            if (p->clients[i].sockfd > maxfd) {
+                maxfd = p->clients[i].sockfd;
             }
         }
     }
     p->maxfd = maxfd;
 }
 
-void remove_client(int old_idx, pool* p)
+void remove_client(int old_idx, client_pool* p)
 {
-    if (p->clientfds[old_idx] == -1) {
+    if (p->clients[old_idx].sockfd == -1) {
         return;
     }
 
-    int old_fd = p->clientfds[old_idx];
+    int old_fd = p->clients[old_idx].sockfd;
     log_info("Remove one client, fd is %d", old_fd);
     close_socket(old_fd);
     FD_CLR(old_fd, &p->read_set);
-    p->clientfds[old_idx] = -1;
+    p->clients[old_idx].sockfd = -1;
 
     if (p->maxci == old_idx) {
         update_rmed_maxci(p);
@@ -162,12 +202,7 @@ void remove_client(int old_idx, pool* p)
     }
 }
 
-/* we can assume the fd is avaliable */
-void proc_one_client(int idx, pool* p)
-{
-}
-
-void proc_clients(pool* p)
+void proc_clients(client_pool* p)
 {
     int connfd;
     ssize_t rn;
@@ -175,12 +210,12 @@ void proc_clients(pool* p)
     int ret;
 
     for (int i = 0; (i <= p->maxci) && (p->nready > 0); i++) {
-        connfd = p->clientfds[i];
+        connfd = p->clients[i].sockfd;
 
         /* ready to read */
         if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
             p->nready--;
-            rn = recv_one_request(&p->client_conns[i].pfsm, connfd);
+            rn = recv_one_request(&p->clients[i].pfsm, connfd);
             if (rn == -1) {
                 response_error(HTTP_BAD_REQUEST, connfd);
                 remove_client(i, p);
@@ -198,7 +233,7 @@ void proc_clients(pool* p)
                     continue;
                 }
 
-                ret = parse(p->client_conns[i].pfsm.buf, rn, request);
+                ret = parse(p->clients[i].pfsm.buf, rn, request);
                 log_debug("parse() return %d", ret);
                 if (ret == 0) { // success
                     ret = do_request(request, connfd);
@@ -240,7 +275,7 @@ static int proc_cmd_line_args(int argc, char* argv[])
     return 0;
 }
 
-static int open_listenfd()
+static int open_listenfd(int port)
 {
     int sock;
     struct sockaddr_in addr;
@@ -251,7 +286,7 @@ static int open_listenfd()
     }
 
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(http_port);
+    addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
     /* servers bind sockets to ports---notify the OS they accept connections */
     if (bind(sock, (struct sockaddr*)&addr, sizeof(addr))) {
@@ -267,15 +302,55 @@ static int open_listenfd()
     }
     return sock;
 }
+
+/* return client_sock.
+ * -1 on error
+ */
+static int proc_http_conn(int fd)
+{
+    int client_sock;
+
+    NO_TEMP_FAILURE(client_sock = accept(fd, NULL, NULL));
+    if (client_sock == -1) {
+        log_error("accept, errno is %d", errno);
+        return -1;
+    }
+    return client_sock;
+}
+
+static SSL* proc_https_conn(int fd, client_pool *p)
+{
+    SSL *client_context = NULL;
+
+    if (proc_http_conn(fd) == -1) {
+        return NULL;
+    }
+
+    if ((client_context = SSL_new(p->ssl_ctx)) == NULL) {
+        close_socket(fd);
+        log_error("Error creating client SSL context.");
+        return NULL;
+    }
+    if (SSL_set_fd(client_context, client_sock) == 0) {
+        close_socket(fd);
+        SSL_free(client_context);
+        log_error"Error creating client SSL context.");
+        return NULL;
+    }
+    if (SSL_accept(client_context) <= 0) {
+        close_socket(fd);
+        SSL_free(client_context);
+        log_error"Error accepting (handshake) client SSL context.");
+        return NULL;
+    }
+    return client_context;
+}
+
 int main(int argc, char* argv[])
 {
-    int sock, client_sock;
-    socklen_t cli_size;
-    struct sockaddr_in cli_addr;
+    int httpfd, httpsfd, client_sock;
 
-    static pool pool;
-
-    /* Initialize */
+    /* Initializations */
     if (proc_cmd_line_args(argc, argv) == -1) {
         fprintf(stderr, "Please input right cmd args\n");
         exit(EXIT_FAILURE);
@@ -287,11 +362,21 @@ int main(int argc, char* argv[])
         fprintf(stderr, "init_log failed\n");
         exit(EXIT_FAILURE);
     }
-    if ((sock = open_listenfd()) == -1) {
+    if ((httpfd = open_listenfd(http_port)) == -1) {
         close_log();
         exit(EXIT_FAILURE);
     }
-    init_pool(sock, &pool);
+    if ((httpsfd = open_listenfd(https_port)) == -1) {
+        close_log();
+        exit(EXIT_FAILURE);
+    }
+    init_pool(httpfd, httpsfd, &pool);
+    if (init_ssl(private_key_file, cert_file, &pool) == -1) {
+        close_log();
+        exit(EXIT_FAILURE);
+    }
+
+
 
     log_info("------------Lisod Starts------------");
     /* finally, loop waiting for input and then write it back */
@@ -303,37 +388,48 @@ int main(int argc, char* argv[])
         if (pool.nready == -1) // Fatal error
         {
             log_error("select");
-            liso_shutdown(&pool, EXIT_FAILURE);
+            liso_shutdown(EXIT_FAILURE);
         }
 
-        if (FD_ISSET(sock, &(pool.ready_set))) // a client tries to connect
-        {
-            cli_size = sizeof(cli_addr);
-            NO_TEMP_FAILURE(client_sock = accept(sock, (struct sockaddr*)&cli_addr, &cli_size));
-            log_debug("new connection:%d", client_sock);
-            if (client_sock == -1) {
-                log_error("accept, errno is %d", errno);
-                if (errno != EMFILE) { // skip it if too many fds opened
-                    liso_shutdown(&pool, EXIT_FAILURE);
+        for (int i = 0, fds[2] = {httpfd, httpsfd}; i < 2; i++) {
+            if (FD_ISSET(fds[i], &(pool.ready_set))) {
+                NO_TEMP_FAILURE(client_sock = accept(fds[i], NULL, NULL));
+                log_debug("new %s connection:%d", i == 0?"http":"https", client_sock);
+                if (client_sock != -1) {
+                    int is_https = (i == 0? 0 : 1);
+
+                    if (is_https) {
+                        
+                    } else {
+                        if (add_client(client_sock, is_https, &pool) == -1) {
+                            close_socket(client_sock);
+                        }
+                    }
+                } else {
+                    log_error("accept, errno is %d", errno);
+                    if (errno != EMFILE) { // skip it if too many fds opened
+                        liso_shutdown(EXIT_FAILURE);
+                    }
                 }
-            } else {
-                add_client(client_sock, &pool);
             }
         }
         proc_clients(&pool);
     }
 
-    liso_shutdown(&pool, EXIT_SUCCESS);
+    liso_shutdown(EXIT_SUCCESS);
 }
 
-static void liso_shutdown(pool* pool, int status)
+static void liso_shutdown(int status)
 {
-    if (pool->listenfd != -1) {
-        close_socket(pool->listenfd);
+    if (pool.httpfd != -1) {
+        close_socket(pool.httpfd);
+    }
+    if (pool.httpsfd != -1) {
+        close_socket(pool.httpsfd);
     }
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (pool->clientfds[i] != -1) {
-            remove_client(i, pool);
+        if (pool.clients[i].sockfd != -1) {
+            remove_client(i, &pool);
         }
     }
     close_log();
@@ -353,6 +449,7 @@ void signal_handler(int sig)
     case SIGTERM:
         /* finalize and shutdown the server */
         // TODO: liso_shutdown(NULL, EXIT_SUCCESS);
+        liso_shutdown(EXIT_SUCCESS);
         break;
     default:
         break;

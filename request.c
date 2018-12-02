@@ -385,6 +385,8 @@ static char *get_MMIE(const char *filename)
     }
 }
 
+
+/* IO functions */
 static int send_body_by_file(char *filepath, size_t len, int fd)
 {
     ssize_t ret;

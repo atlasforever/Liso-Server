@@ -1,8 +1,8 @@
-#include "parse.h"
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "common.h"
+#include "lisod.h"
 #include "log.h"
+#include "parse.h"
 
 /* Comes from generated Yacc code */
 int yyparse();

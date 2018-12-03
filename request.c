@@ -10,7 +10,7 @@
 #include "http_common.h"
 #include "log.h"
 #include "parse.h"
-#include "common.h"
+#include "lisod.h"
 #include "request.h"
 
 extern char *www_folder;

@@ -27,7 +27,7 @@
 
 #include <openssl/ssl.h>
 
-#include "common.h"
+#include "lisod.h"
 #include "http_common.h"
 #include "log.h"
 #include "parse.h"
@@ -109,7 +109,7 @@ static int init_ssl(const char *key, const char *cert, client_pool *p)
     SSL_library_init();
 
     /* we want to use TLSv1 only */
-    if ((p->ssl_ctx = SSL_CTX_new(TLSv1_server_method())) == NULL) {
+    if ((p->ssl_ctx = SSL_CTX_new(TLS_server_method())) == NULL) {
         log_error("Error creating SSL context.");
         return -1;
     }
@@ -136,8 +136,6 @@ static int init_ssl(const char *key, const char *cert, client_pool *p)
  */
 int add_client(int clientfd, SSL* ctx, client_pool* p)
 {
-    log_info("Add a new client fd:%d", clientfd);
-
     int i;
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (p->clients[i].sockfd == -1) {
@@ -158,9 +156,10 @@ int add_client(int clientfd, SSL* ctx, client_pool* p)
         }
     }
     if (i == FD_SETSIZE) {
-        log_info("Too many clients");
+        log_info("add_client() failed: Too many clients");
         return -1;
     }
+    log_info("Add a new client fd:%d", clientfd);
     return 0;
 }
 
@@ -361,6 +360,7 @@ static SSL* proc_https_conn(int lisntenfd, client_pool *p)
 
 static void liso_shutdown(int status)
 {
+    log_info("Liso Shutdown");
     if (pool.httpfd != -1) {
         close_socket(pool.httpfd);
     }
@@ -446,7 +446,7 @@ int daemonize(char* lock_file)
 
 int main(int argc, char* argv[])
 {
-    int httpfd, httpsfd, client_sock;
+    int httpfd, httpsfd;
 
     /* Initializations */
     if (proc_cmd_line_args(argc, argv) == -1) {
@@ -490,15 +490,19 @@ int main(int argc, char* argv[])
         }
 
         if (FD_ISSET(httpfd, &(pool.ready_set))) {
+            log_info("A new HTTP connection");
             pool.nready--;
             int clientfd = proc_http_conn(httpfd);
             if (clientfd != -1) {
                 if (add_client(clientfd, NULL, &pool) == -1) {
                     close_socket(clientfd);
                 }
+            } else {
+                log_error("Fail to create HTTP client");
             }
         }
         if (FD_ISSET(httpsfd, &(pool.ready_set))) {
+            log_info("A new HTTPS connection");
             pool.nready--;
             SSL* ctx = proc_https_conn(httpsfd, &pool);
             if (ctx) {
@@ -506,6 +510,8 @@ int main(int argc, char* argv[])
                 if (add_client(clientfd, ctx, &pool) == -1) {
                     close_socket(clientfd);
                 }
+            } else {
+                log_error("Fail to create HTTPS client");
             }
         }
 

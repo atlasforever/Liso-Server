@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./lisod 9999 1 test.log lisod.lock www/ cgi/ private_keys/ certs/
+./lisod 9999 9998 test.log lisod.lock www/ cgi/ server.key server.crt

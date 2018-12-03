@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include "log.h"
-#include "common.h"
+#include "lisod.h"
 
 #define LOG_BUF_SIZE 512
 

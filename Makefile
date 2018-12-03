@@ -9,6 +9,7 @@
 ################################################################################
 CC= gcc
 CFLAGS= -Wall -Werror
+LDLIBS = -lssl -lcrypto
 objects= lisod.o log.o parse.o y.tab.o lex.yy.o request.o
 
 .PHONY: default clean
@@ -24,15 +25,15 @@ y.tab.c: parser.y
 # Automatically generated
 lex.yy.o: lex.yy.c y.tab.h
 	$(CC) $^ -c
-lisod.o: lisod.c common.h http_common.h log.h parse.h request.h
-log.o: log.c log.h common.h
-parse.o: parse.c parse.h request.h common.h log.h
-request.o: request.c http_common.h log.h parse.h request.h common.h
+lisod.o: lisod.c lisod.h http_common.h log.h parse.h request.h
+log.o: log.c log.h lisod.h
+parse.o: parse.c parse.h request.h lisod.h log.h
+request.o: request.c http_common.h log.h parse.h request.h lisod.h
 y.tab.o: y.tab.c parse.h
 	$(CC) $^ -c
 
 lisod: $(objects)
-	$(CC) $(objects) -o lisod $(CFLAGS)
+	$(CC) $(objects) -o lisod $(CFLAGS) $(LDLIBS)
 
 clean:
 	@rm lisod *.o lex.yy.c y.tab.c y.tab.h *.h.gch

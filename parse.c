@@ -113,7 +113,7 @@ int recv_one_request(http_client *client)
     return fsm->idx2parse;
 }
 
-void init_parse_fsm(parse_fsm *fsm)
+void init_parse_fsm(parse_fsm_t *fsm)
 {
     fsm->compelted = 0;
     fsm->idx2parse = 0;

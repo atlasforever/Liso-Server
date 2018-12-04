@@ -50,6 +50,8 @@ static char* cert_file;
 
 typedef struct {
     int maxfd;
+    int left_rfds;
+    int left_wfds;
     fd_set read_set;
     fd_set ready_set;
     int nready;
@@ -87,6 +89,8 @@ static void init_pool(int httpfd, int httpsfd, client_pool* p)
     }
 
     p->maxfd = httpfd > httpsfd ? httpfd : httpsfd;
+    p->left_rfds = FD_SETSIZE;
+    p->left_wfds = 0;
     p->httpfd = httpfd;
     p->httpsfd = httpsfd;
     FD_ZERO(&(p->read_set));
@@ -128,7 +132,7 @@ static int init_ssl(const char *key, const char *cert, client_pool *p)
 int add_client(int clientfd, SSL* ctx, client_pool* p)
 {
     int i;
-    for (i = 0; i < MAX_CLIENTS; i++) {
+    for (i = 0; i < MAX_CLIENTS && p->left_rfds > 0; i++) {
         if (p->clients[i].sockfd == -1) {
             p->clients[i].sockfd = clientfd;
             p->clients[i].type = ctx? HTTPS_TYPE : HTTP_TYPE;
@@ -138,20 +142,20 @@ int add_client(int clientfd, SSL* ctx, client_pool* p)
             p->clients[i].request = NULL;
 
             FD_SET(clientfd, &(p->read_set));
+            p->left_rfds--;
             if (i > p->maxci) {
                 p->maxci = i;
             }
             if (clientfd > p->maxfd) {
                 p->maxfd = clientfd;
             }
+            log_info("Add a new client fd:%d", clientfd);
+            return 0;
         }
     }
-    if (i == FD_SETSIZE) {
-        log_info("add_client() failed: Too many clients");
-        return -1;
-    }
-    log_info("Add a new client fd:%d", clientfd);
-    return 0;
+
+    log_info("add_client() failed: Too many clients");
+    return -1;
 }
 
 static void update_rmed_maxci(client_pool* p)
@@ -185,11 +189,20 @@ void remove_client(int old_idx, client_pool* p)
     }
 
     int old_fd = p->clients[old_idx].sockfd;
+    http_client *c = &(p->clients[old_idx]);
+
     log_info("Remove one client, fd is %d", old_fd);
     close_socket(old_fd);
     FD_CLR(old_fd, &p->read_set);
-    p->clients[old_idx].sockfd = -1;
+    c->sockfd = -1;
+    if (c->request) {
+        free_request(p->clients[old_fd].request);
+    }
+    if (c->client_context) {
+        SSL_free(c->client_context);
+    }
 
+    
     if (p->maxci == old_idx) {
         update_rmed_maxci(p);
     }
@@ -312,6 +325,19 @@ static int proc_http_conn(int fd)
         log_error("accept, errno is %d", errno);
         return -1;
     }
+
+    int flags = fcntl(client_sock, F_GETFL);
+    if (flags == -1) {
+        log_error("fcntl F_GETFL error");
+        close_socket(client_sock);
+        return -1;
+    }
+    flags |= O_NONBLOCK;
+    if (fcntl(client_sock, F_SETFL, flags) == -1) {
+        log_error("fcntl F_SETFL error");
+        close_socket(client_sock);
+        return -1;
+    }
     return client_sock;
 }
 
@@ -393,7 +419,7 @@ int liso_nb_recv(http_client *c, void* buf, size_t len)
             }
         }
     } else {
-        NO_TEMP_FAILURE((rn = recv(c->fd, buf, len, MSG_DONTWAIT)));
+        NO_TEMP_FAILURE((rn = recv(c->sockfd, buf, len, MSG_DONTWAIT)));
         if (rn == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return -2;
@@ -411,8 +437,8 @@ int liso_nb_send(http_client *c, void* buf, size_t len)
     int sn = 0;
 
     if (c->type == HTTPS_TYPE) {
-        rn = ssl_write(c->client_context, buf, len);
-        if (rn <= 0) {
+        sn = ssl_write(c->client_context, buf, len);
+        if (sn <= 0) {
             int err = SSL_get_error(c->client_context, rn);
             switch (err) {
             case SSL_ERROR_ZERO_RETURN:
@@ -425,8 +451,8 @@ int liso_nb_send(http_client *c, void* buf, size_t len)
             }
         }
     } else {
-        NO_TEMP_FAILURE((rn = send(c->fd, buf, len, MSG_DONTWAIT)));
-        if (rn == -1) {
+        NO_TEMP_FAILURE((sn = send(c->sockfd, buf, len, MSG_DONTWAIT)));
+        if (sn == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return -2;
             } else {
@@ -436,7 +462,7 @@ int liso_nb_send(http_client *c, void* buf, size_t len)
             return 0;
         }
     }
-    return rn;
+    return sn;
 }
 
 

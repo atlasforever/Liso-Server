@@ -24,7 +24,7 @@ typedef struct
 	char http_version[HTTP_VERSION_MAX_SIZE + 1];
 	char http_method[HTTP_METHOD_MAX_SIZE + 1];
 	char http_uri[HTTP_URI_MAX_SIZE + 1];
-	Request_header *headers;	// dummy linked list head for headers 
+	Request_header *headers;	// dummy head of linked list for headers 
 	int header_count;
 } Request;
 

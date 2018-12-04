@@ -23,11 +23,11 @@ typedef struct
     int total_bytes;
     // resume checking CRLFCRLF from this index in buf.
     int idx2parse;
-} parse_fsm;
+} parse_fsm_t;
 
 
-void init_parse_fsm(parse_fsm *fsm);
-int recv_one_request(parse_fsm *fsm, int sock);
+void init_parse_fsm(parse_fsm_t *fsm);
+int recv_one_request(parse_fsm_t *fsm, int sock);
 int parse(char* buffer, int size, Request* request);
 Request* alloc_request();
 void free_request(Request *rqst);

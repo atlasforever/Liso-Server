@@ -47,9 +47,10 @@ int parse(char* buffer, int size, Request* request)
  * 0: Reading is NOT yet completed. Wait to be called nex time.
  * -1: Fail. Maybe caller should close the socket.
  */
-int recv_one_request(parse_fsm *fsm, int sock)
+int recv_one_request(http_client *client)
 {
     ssize_t rn;
+    parse_fsm_t *fsm = &(client->pfsm);
 
     // Begin to read a new request
     if (fsm->compelted) {
@@ -62,20 +63,13 @@ int recv_one_request(parse_fsm *fsm, int sock)
         fsm->idx2parse = 0;
     }
 
-    NO_TEMP_FAILURE(rn = recv(sock, &fsm->buf[fsm->total_bytes],
-                                REQUEST_MAX_SIZE - fsm->total_bytes,
-                                MSG_DONTWAIT));
-    if (rn == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {  // nonblocking
-            return 0;
-        } else {
-            fsm->compelted = 1;
-            return -1;
-        }
-    }
-    if (rn == 0) {
+    rn = liso_nb_recv(client, &fsm->buf[fsm->total_bytes], REQUEST_MAX_SIZE - fsm->total_bytes);
+    if (rn == -1 || rn == -2) {
         // Client shouldn't close socket now
+        fsm->compelted = 1;
         return -1;
+    } else if (rn == 0) {
+        return 0;
     }
 
     fsm->total_bytes += rn;

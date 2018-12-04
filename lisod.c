@@ -47,15 +47,6 @@ static char* cgi_path;
 static char* private_key_file;
 static char* cert_file;
 
-/* Information about a connection */
-typedef struct {
-    int is_https;
-    SSL *client_context;
-    int sockfd;   // (-1) when this client doesn't exist
-
-    parse_fsm pfsm; // buffer used for receving pipelined request
-    Request *request; // the current parsed request
-} http_client;
 
 typedef struct {
     int maxfd;
@@ -92,7 +83,7 @@ static void init_pool(int httpfd, int httpsfd, client_pool* p)
     p->maxci = -1;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         p->clients[i].sockfd = -1;
-        p->clients[i].is_https = 0;
+        p->clients[i].type = HTTP_TYPE;
     }
 
     p->maxfd = httpfd > httpsfd ? httpfd : httpsfd;
@@ -140,7 +131,7 @@ int add_client(int clientfd, SSL* ctx, client_pool* p)
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (p->clients[i].sockfd == -1) {
             p->clients[i].sockfd = clientfd;
-            p->clients[i].is_https = ctx? 1 : 0;
+            p->clients[i].type = ctx? HTTPS_TYPE : HTTP_TYPE;
             p->clients[i].client_context = ctx;
             // initialize for persistent connection
             init_parse_fsm(&(p->clients[i].pfsm));
@@ -375,6 +366,79 @@ static void liso_shutdown(int status)
     close_log();
     exit(status);
 }
+
+
+/*
+ * Non-blocking IO function for HTTP or HTTPS connection.
+ * 
+ * Both return number of bytes transferred. -1 on error. 0 on connection closed.
+ * -2 indicates that this function should be called again later.
+ */
+int liso_nb_recv(http_client *c, void* buf, size_t len)
+{
+    int rn = 0;
+
+    if (c->type == HTTPS_TYPE) {
+        rn = ssl_read(c->client_context, buf, len);
+        if (rn <= 0) {
+            int err = SSL_get_error(c->client_context, rn);
+            switch (err) {
+            case SSL_ERROR_ZERO_RETURN:
+                return 0;
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+                return -2;
+            default:
+                return -1;
+            }
+        }
+    } else {
+        NO_TEMP_FAILURE((rn = recv(c->fd, buf, len, MSG_DONTWAIT)));
+        if (rn == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return -2;
+            } else {
+                return -1;
+            }
+        } else if (rn == 0) {
+            return 0;
+        }
+    }
+    return rn;
+}
+int liso_nb_send(http_client *c, void* buf, size_t len)
+{
+    int sn = 0;
+
+    if (c->type == HTTPS_TYPE) {
+        rn = ssl_write(c->client_context, buf, len);
+        if (rn <= 0) {
+            int err = SSL_get_error(c->client_context, rn);
+            switch (err) {
+            case SSL_ERROR_ZERO_RETURN:
+                return 0;
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+                return -2;
+            default:
+                return -1;
+            }
+        }
+    } else {
+        NO_TEMP_FAILURE((rn = send(c->fd, buf, len, MSG_DONTWAIT)));
+        if (rn == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return -2;
+            } else {
+                return -1;
+            }
+        } else if (rn == 0) {
+            return 0;
+        }
+    }
+    return rn;
+}
+
 
 
 

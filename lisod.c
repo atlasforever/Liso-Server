@@ -35,7 +35,7 @@
 
 #define BUF_SIZE 4096
 #define MAX_CLIENTS \
-    (FD_SETSIZE - 2) // leave 2 select-fd for HTTP and HTTPS ports
+    ((FD_SETSIZE - 2) / 3) // leave 2 select-fd for HTTP and HTTPS ports. And each client will have 3 fds.
 
 /* Command line arguments */
 static in_port_t http_port;
@@ -61,9 +61,9 @@ typedef struct {
     
     int httpfd;
     int httpsfd;
-    http_client clients[MAX_CLIENTS];
-} client_pool;
-client_pool pool;
+    http_client_t clients[MAX_CLIENTS];
+} client_pool_t;
+client_pool_t pool;
 
 /* Declarations */
 static void liso_shutdown(int status);
@@ -79,7 +79,7 @@ int close_socket(int sock)
     return 0;
 }
 
-static void init_pool(int httpfd, int httpsfd, client_pool* p)
+static void init_pool(int httpfd, int httpsfd, client_pool_t* p)
 {
     /* no clients initially */
     p->maxci = -1;
@@ -98,7 +98,7 @@ static void init_pool(int httpfd, int httpsfd, client_pool* p)
     FD_SET(httpsfd, &(p->read_set));
 }
 
-static int init_ssl(const char *key, const char *cert, client_pool *p)
+static int init_ssl(const char *key, const char *cert, client_pool_t *p)
 {
     SSL_load_error_strings();
     SSL_library_init();
@@ -129,17 +129,21 @@ static int init_ssl(const char *key, const char *cert, client_pool *p)
 /*
  * Add a client to the pool. It's a HTTP client if ctx is NULL, otherwise HTTPS.
  */
-int add_client(int clientfd, SSL* ctx, client_pool* p)
+int add_client(int clientfd, SSL* ctx, client_pool_t* p)
 {
     int i;
-    for (i = 0; i < MAX_CLIENTS && p->left_rfds > 0; i++) {
+    for (i = 0; i < MAX_CLIENTS; i++) {
         if (p->clients[i].sockfd == -1) {
             p->clients[i].sockfd = clientfd;
             p->clients[i].type = ctx? HTTPS_TYPE : HTTP_TYPE;
             p->clients[i].client_context = ctx;
+            p->clients[i].need_close = 0;
             // initialize for persistent connection
             init_parse_fsm(&(p->clients[i].pfsm));
-            p->clients[i].request = NULL;
+            if (init_request(&(p->clients[i].request)) == -1) {
+                log_error("init_request() failed");
+                return -1;
+            }
 
             FD_SET(clientfd, &(p->read_set));
             p->left_rfds--;
@@ -158,7 +162,7 @@ int add_client(int clientfd, SSL* ctx, client_pool* p)
     return -1;
 }
 
-static void update_rmed_maxci(client_pool* p)
+static void update_rmed_maxci(client_pool_t* p)
 {
     int maxi = -1;
 
@@ -169,7 +173,7 @@ static void update_rmed_maxci(client_pool* p)
     }
     p->maxci = maxi;
 }
-static void update_rmed_maxfd(client_pool* p)
+static void update_rmed_maxfd(client_pool_t* p)
 {
     int maxfd = p->httpfd > p->httpsfd ? p->httpfd : p->httpsfd;
     for (int i = 0; i <= p->maxci; i++) {
@@ -182,14 +186,14 @@ static void update_rmed_maxfd(client_pool* p)
     p->maxfd = maxfd;
 }
 
-void remove_client(int old_idx, client_pool* p)
+void remove_client(int old_idx, client_pool_t* p)
 {
     if (p->clients[old_idx].sockfd == -1) {
         return;
     }
 
     int old_fd = p->clients[old_idx].sockfd;
-    http_client *c = &(p->clients[old_idx]);
+    http_client_t *c = &(p->clients[old_idx]);
 
     log_info("Remove one client, fd is %d", old_fd);
     close_socket(old_fd);
@@ -211,56 +215,6 @@ void remove_client(int old_idx, client_pool* p)
     }
 }
 
-void proc_clients(client_pool* p)
-{
-    int connfd;
-    ssize_t rn;
-    int ret;
-
-    for (int i = 0; (i <= p->maxci) && (p->nready > 0); i++) {
-        connfd = p->clients[i].sockfd;
-
-        /* ready to read */
-        if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
-            p->nready--;
-            rn = recv_one_request(&p->clients[i].pfsm, connfd);
-            if (rn == -1) {
-                response_error(HTTP_BAD_REQUEST, connfd);
-                remove_client(i, p);
-            } else if (rn == 0) {
-                log_debug("continue");
-                continue;
-            } else { // OK
-                Request* request = alloc_request();
-                p->clients[i].request = request;
-                if (!request) {
-                    log_error("alloc_request() failed");
-                    if (response_error(HTTP_INTERNAL_SERVER_ERROR, connfd) == -1) {
-                        log_error("Failed to send error response to sock %d", connfd);
-                    }
-                    remove_client(i, p);
-                    continue;
-                }
-
-                ret = parse(p->clients[i].pfsm.buf, rn, request);
-                log_debug("parse() return %d", ret);
-                if (ret == 0) { // success
-                    ret = do_request(request, connfd);
-                    log_debug("do_request return %d", ret);
-                    if (ret != 0) {
-                        remove_client(i, p);
-                    }
-                } else { // error parsing
-                    if (response_error(HTTP_BAD_REQUEST, connfd) == -1) {
-                        log_error("Failed to send error response to sock %d", connfd);
-                        remove_client(i, p);
-                    }
-                }
-                free_request(request);
-            }
-        }
-    }
-}
 
 static int proc_cmd_line_args(int argc, char* argv[])
 {
@@ -345,7 +299,7 @@ static int proc_http_conn(int fd)
  * return client SSL context.
  * on error, return NULL 
  */
-static SSL* proc_https_conn(int lisntenfd, client_pool *p)
+static SSL* proc_https_conn(int lisntenfd, client_pool_t *p)
 {
     SSL *client_context = NULL;
     int client_sock;
@@ -400,7 +354,7 @@ static void liso_shutdown(int status)
  * Both return number of bytes transferred. -1 on error. 0 on connection closed.
  * -2 indicates that this function should be called again later.
  */
-int liso_nb_recv(http_client *c, void* buf, size_t len)
+int liso_nb_recv(http_client_t *c, void* buf, size_t len)
 {
     int rn = 0;
 
@@ -432,14 +386,14 @@ int liso_nb_recv(http_client *c, void* buf, size_t len)
     }
     return rn;
 }
-int liso_nb_send(http_client *c, void* buf, size_t len)
+int liso_nb_send(http_client_t *c, void* buf, size_t len)
 {
     int sn = 0;
 
     if (c->type == HTTPS_TYPE) {
         sn = ssl_write(c->client_context, buf, len);
         if (sn <= 0) {
-            int err = SSL_get_error(c->client_context, rn);
+            int err = SSL_get_error(c->client_context, sn);
             switch (err) {
             case SSL_ERROR_ZERO_RETURN:
                 return 0;
@@ -458,7 +412,7 @@ int liso_nb_send(http_client *c, void* buf, size_t len)
             } else {
                 return -1;
             }
-        } else if (rn == 0) {
+        } else if (sn == 0) {
             return 0;
         }
     }
@@ -532,6 +486,93 @@ int daemonize(char* lock_file)
     // TODO: log --> "Successfully daemonized lisod process, pid %d."
 
     return EXIT_SUCCESS;
+}
+
+
+
+
+void proc_clients(client_pool_t* p)
+{
+    ssize_t rn;
+    int ret;
+
+    for (int i = 0; (i <= p->maxci) && (p->nready > 0); i++) {
+        http_client_t *cl = &(p->clients[i]);
+        int connfd = cl->sockfd;
+
+        /* ready to read */
+        if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
+            p->nready--;
+            rn = recv_one_request(&(p->clients[i]));
+            if (rn == -1) {
+                response_error(HTTP_BAD_REQUEST, connfd);
+                remove_client(i, p);
+            } else if (rn == 0) {
+                log_debug("continue");
+                continue;
+            } else { // OK
+                Request* request = alloc_request();
+                p->clients[i].request = request;
+                if (!request) {
+                    log_error("alloc_request() failed");
+                    if (response_error(HTTP_INTERNAL_SERVER_ERROR, connfd) == -1) {
+                        log_error("Failed to send error response to sock %d", connfd);
+                    }
+                    remove_client(i, p);
+                    continue;
+                }
+
+                ret = parse(p->clients[i].pfsm.buf, rn, request);
+                log_debug("parse() return %d", ret);
+                if (ret == 0) { // success
+                    ret = do_request(request, connfd);
+                    log_debug("do_request return %d", ret);
+                    if (ret != 0) {
+                        remove_client(i, p);
+                    }
+                } else { // error parsing
+                    if (response_error(HTTP_BAD_REQUEST, connfd) == -1) {
+                        log_error("Failed to send error response to sock %d", connfd);
+                        remove_client(i, p);
+                    }
+                }
+                free_request(request);
+            }
+        }
+
+
+
+
+        if (connfd == -1) {
+            continue;
+        }
+
+        switch (cl->request.states) {
+        case READ_REQ_HEADERS:
+            if (FD_ISSET(connfd, &(p->ready_set))) {
+                p->nready--;
+                int rn = recv_one_request(cl);
+                if (rn == 0) {
+                    log_debug("continue");
+                    continue;
+                } else if (rn == -1) {
+                    response_error
+                }
+            }
+            break;
+        case WAIT_STATIC_REQ_BODY:
+            break;
+        case WAIT_CGI_REQ_BODY:
+            break;
+        case SEND_STATIC_HEADERS:
+            //break;
+        case SEND_CONTENT:
+            break;
+        case CLOSE:
+        default:
+            break;
+        }
+    }
 }
 
 int main(int argc, char* argv[])

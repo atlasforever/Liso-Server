@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <openssl/ssl.h>
 #include "request.h"
+#include "queue_buf.h"
 #include "parse.h"
 
 #define NO_TEMP_FAILURE(stmt)                     \
@@ -23,10 +24,15 @@ typedef struct {
     SSL *client_context;
     int sockfd;   // (-1) when this client doesn't exist
 
-    parse_fsm_t pfsm; // buffer used for receving pipelined request
-    Request *request; // the current parsed request
-} http_client;
+    qbuf_t *rbuf; // used for reading requests
+    qbuf_t *wbuf; // used for writing responses
 
-int liso_nb_recv(http_client *c, void* buf, size_t len);
-int liso_nb_send(http_client *c, void* buf, size_t len);
+    parse_fsm_t pfsm; // buffer used for receving pipelined request
+    Request request; // the current parsed request
+
+    int need_close;
+} http_client_t;
+
+int liso_nb_recv(http_client_t *c, void* buf, size_t len);
+int liso_nb_send(http_client_t *c, void* buf, size_t len);
 #endif

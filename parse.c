@@ -47,7 +47,7 @@ int parse(char* buffer, int size, Request* request)
  * 0: Reading is NOT yet completed. Wait to be called nex time.
  * -1: Fail. Maybe caller should close the socket.
  */
-int recv_one_request(http_client *client)
+int recv_one_request(http_client_t *client)
 {
     ssize_t rn;
     parse_fsm_t *fsm = &(client->pfsm);
@@ -119,35 +119,4 @@ void init_parse_fsm(parse_fsm_t *fsm)
     fsm->idx2parse = 0;
     fsm->state = STATE_START;
     fsm->total_bytes = 0;
-}
-
-static void free_headers(Request_header* head)
-{
-    Request_header* tmp;
-    Request_header* new_hd = head;
-
-    while (new_hd != NULL) {
-        tmp = new_hd->next;
-        free(new_hd);
-        new_hd = tmp;
-    }
-}
-
-Request* alloc_request()
-{
-    Request* r = (Request*)malloc(sizeof(Request));
-    if (!r) {
-        return NULL;
-    }
-    r->headers = (Request_header*)malloc(sizeof(Request_header));
-    if (!(r->headers)) {
-        free(r);
-        return NULL;
-    }
-    return r;
-}
-void free_request(Request* rqst)
-{
-    free_headers(rqst->headers);
-    free(rqst);
 }

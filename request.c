@@ -324,6 +324,8 @@ int response_error(int code, int fd)
     return 0;
 }
 
+
+
 static char* get_header_value(Request *request, const char *name)
 {
     Request_header *cur = request->headers->next;
@@ -384,6 +386,9 @@ static char *get_MMIE(const char *filename)
         return MIME_OCTET_STREAM;
     }
 }
+
+
+
 
 
 /* IO functions */
@@ -485,4 +490,41 @@ static int send_response_line(char *version, int code, char *phrase, int fd)
         return -1;
     }
     return 0;
+}
+
+
+int init_request(Request *r)
+{
+    if (!r) {
+        return -1;
+    }
+    // A useless head
+    r->headers = (Request_header*)malloc(sizeof(Request_header));
+    if (!(r->headers)) {
+        free(r);
+        return -1;
+    }
+    r->header_count = 0;
+    r->states = READ_REQ_HEADERS;
+    r->rfd = -1;
+    r->wfd = -1;
+    return 0;
+}
+
+static void free_headers(Request_header* head)
+{
+    Request_header* tmp;
+    Request_header* new_hd = head;
+
+    while (new_hd != NULL) {
+        tmp = new_hd->next;
+        free(new_hd);
+        new_hd = tmp;
+    }
+}
+
+void free_request(Request* rqst)
+{
+    free_headers(rqst->headers);
+    free(rqst);
 }

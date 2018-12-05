@@ -27,9 +27,7 @@ typedef struct
 
 
 void init_parse_fsm(parse_fsm_t *fsm);
-int recv_one_request(parse_fsm_t *fsm, int sock);
+int recv_one_request(http_client_t *client);
 int parse(char* buffer, int size, Request* request);
-Request* alloc_request();
-void free_request(Request *rqst);
 
 #endif

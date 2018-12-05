@@ -3,13 +3,14 @@
 
 /* Size limits in HTTP Message */
 #define REQUEST_MAX_SIZE 8192
+#define RESPONSE_MAX_SIZE_EXP_BODY 2048
 #define HTTP_VERSION_MAX_SIZE 32
 #define HTTP_METHOD_MAX_SIZE 32
-#define HTTP_URI_MAX_SIZE 4096
+#define HTTP_URI_MAX_SIZE 2048
 #define HEADER_NAME_MAX_SIZE 64
 #define HEADER_VALUE_MAX_SIZE 4096
 
-//Header field
+// Header field
 typedef struct Request_header Request_header;
 struct Request_header
 {
@@ -18,7 +19,17 @@ struct Request_header
 	Request_header *next;
 };
 
-//HTTP Request Header
+// HTTP Request States
+typedef enum {
+    READ_REQ_HEADERS,
+    WAIT_STATIC_REQ_BODY,
+    WAIT_CGI_REQ_BODY,
+    SEND_STATIC_HEADERS,	// Headers of response for static content 
+    SEND_CONTENT,	// Can be a static content file or CGI's output 
+    CLOSE
+} request_states_t;
+
+// HTTP Request Header
 typedef struct
 {
 	char http_version[HTTP_VERSION_MAX_SIZE + 1];
@@ -26,10 +37,18 @@ typedef struct
 	char http_uri[HTTP_URI_MAX_SIZE + 1];
 	Request_header *headers;	// dummy head of linked list for headers 
 	int header_count;
+
+	// Response headers buffer
+	char resp_headers[RESPONSE_MAX_SIZE_EXP_BODY];
+
+	request_states_t states;
+	int rfd; // file or CGI-pipe fd this request needs to read from
+	int wfd; // file or CGI-pipe fd this request needs to write to
 } Request;
 
 
-
+int init_request(Request *r);
+void free_request(Request *rqst);
 int do_request(Request *request, int sockfd);
 int response_error(int code, int fd);
 

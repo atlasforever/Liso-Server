@@ -19,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -33,9 +32,6 @@
 #include "parse.h"
 #include "request.h"
 
-#define BUF_SIZE 4096
-#define MAX_CLIENTS \
-    ((FD_SETSIZE - 2) / 3) // leave 2 select-fd for HTTP and HTTPS ports. And each client will have 3 fds.
 
 /* Command line arguments */
 static in_port_t http_port;
@@ -48,21 +44,6 @@ static char* private_key_file;
 static char* cert_file;
 
 
-typedef struct {
-    int maxfd;
-    int left_rfds;
-    int left_wfds;
-    fd_set read_set;
-    fd_set ready_set;
-    int nready;
-    int maxci;
-
-    SSL_CTX *ssl_ctx;
-    
-    int httpfd;
-    int httpsfd;
-    http_client_t clients[MAX_CLIENTS];
-} client_pool_t;
 client_pool_t pool;
 
 /* Declarations */
@@ -89,8 +70,6 @@ static void init_pool(int httpfd, int httpsfd, client_pool_t* p)
     }
 
     p->maxfd = httpfd > httpsfd ? httpfd : httpsfd;
-    p->left_rfds = FD_SETSIZE;
-    p->left_wfds = 0;
     p->httpfd = httpfd;
     p->httpsfd = httpsfd;
     FD_ZERO(&(p->read_set));
@@ -137,16 +116,17 @@ int add_client(int clientfd, SSL* ctx, client_pool_t* p)
             p->clients[i].sockfd = clientfd;
             p->clients[i].type = ctx? HTTPS_TYPE : HTTP_TYPE;
             p->clients[i].client_context = ctx;
-            p->clients[i].need_close = 0;
+            p->clients[i].need_close = 0; // Persistent connection
             // initialize for persistent connection
             init_parse_fsm(&(p->clients[i].pfsm));
             if (init_request(&(p->clients[i].request)) == -1) {
+                p->clients[i].sockfd = -1;
                 log_error("init_request() failed");
                 return -1;
             }
 
             FD_SET(clientfd, &(p->read_set));
-            p->left_rfds--;
+            FD_SET(clientfd, &(p->write_set));
             if (i > p->maxci) {
                 p->maxci = i;
             }
@@ -162,6 +142,9 @@ int add_client(int clientfd, SSL* ctx, client_pool_t* p)
     return -1;
 }
 
+int max(int a, int b){
+    return a > b ? a : b;
+}
 static void update_rmed_maxci(client_pool_t* p)
 {
     int maxi = -1;
@@ -192,16 +175,26 @@ void remove_client(int old_idx, client_pool_t* p)
         return;
     }
 
-    int old_fd = p->clients[old_idx].sockfd;
     http_client_t *c = &(p->clients[old_idx]);
+    int cfd = c->sockfd;
+    int rfd = c->request.rfd;
+    int wfd = c->request.wfd;
 
-    log_info("Remove one client, fd is %d", old_fd);
-    close_socket(old_fd);
-    FD_CLR(old_fd, &p->read_set);
-    c->sockfd = -1;
-    if (c->request) {
-        free_request(p->clients[old_fd].request);
+    log_info("Remove one client, fd is %d", cfd);
+
+    if (rfd != -1) {
+        FD_CLR(rfd, &p->read_set);
     }
+    if (wfd != -1) {
+        FD_CLR(wfd, &p->write_set);
+    }
+    close_socket(cfd);
+    FD_CLR(cfd, &p->read_set);
+    FD_CLR(cfd, &p->write_set);
+    c->sockfd = -1;
+
+    reset_request(&(c->request));
+
     if (c->client_context) {
         SSL_free(c->client_context);
     }
@@ -210,6 +203,8 @@ void remove_client(int old_idx, client_pool_t* p)
     if (p->maxci == old_idx) {
         update_rmed_maxci(p);
     }
+
+
     if (p->maxfd == old_fd) {
         update_rmed_maxfd(p);
     }
@@ -546,29 +541,50 @@ void proc_clients(client_pool_t* p)
         if (connfd == -1) {
             continue;
         }
-
         switch (cl->request.states) {
         case READ_REQ_HEADERS:
-            if (FD_ISSET(connfd, &(p->ready_set))) {
+            if (FD_ISSET(connfd, &(p->rready_set))) {
                 p->nready--;
                 int rn = recv_one_request(cl);
                 if (rn == 0) {
-                    log_debug("continue");
-                    continue;
+                    log_debug("Read the rest part next time");
+                    // continue;
                 } else if (rn == -1) {
-                    response_error
+                    cl->need_close = 1;
+                    response_error(HTTP_BAD_REQUEST, &(cl->request));
+                    cl->request.states = SEND_STATIC_HEADERS;
+                } else { // received a request
+                    int parse_r = parse(cl->pfsm.buf, rn, &(cl->request));
+                    log_debug("parse() return %d", parse_r);
+
+                    if (parse_r == 0) {   // successful parsed
+                        int do_ret = do_request(&(cl->request));
+                        if (do_ret >= 0) {
+                            cl->request.states = WAIT_REQ_BODY;
+                            if (do_ret == 1) {
+                                cl->need_close = 1;
+                            }
+                        } else {
+                            cl->request.states = SEND_STATIC_HEADERS;
+                            cl->need_close = 1;
+                        }
+                    } else {
+                        response_error(HTTP_BAD_REQUEST, &(cl->request));
+                        cl->request.states = SEND_STATIC_HEADERS;
+                    }
                 }
             }
             break;
-        case WAIT_STATIC_REQ_BODY:
-            break;
-        case WAIT_CGI_REQ_BODY:
+        case WAIT_REQ_BODY:
             break;
         case SEND_STATIC_HEADERS:
             //break;
         case SEND_CONTENT:
             break;
         case CLOSE:
+            if (cl->need_close) {
+                remove_client(i, &pool)
+            }
         default:
             break;
         }
@@ -610,17 +626,18 @@ int main(int argc, char* argv[])
     log_info("------------Lisod Starts------------");
     /* finally, loop waiting for input and then write it back */
     while (1) {
-        pool.ready_set = pool.read_set;
+        pool.rready_set = pool.read_set;
+        pool.wready_set = pool.write_set;
         /* restart from EINTR */
         NO_TEMP_FAILURE(pool.nready = select(pool.maxfd + 1,
-                            &(pool.ready_set), NULL, NULL, NULL));
+                            &(pool.rready_set), &(pool.wready_set), NULL, NULL));
         if (pool.nready == -1) // Fatal error
         {
             log_error("select");
             liso_shutdown(EXIT_FAILURE);
         }
 
-        if (FD_ISSET(httpfd, &(pool.ready_set))) {
+        if (FD_ISSET(httpfd, &(pool.rready_set))) {
             log_info("A new HTTP connection");
             pool.nready--;
             int clientfd = proc_http_conn(httpfd);
@@ -632,7 +649,7 @@ int main(int argc, char* argv[])
                 log_error("Fail to create HTTP client");
             }
         }
-        if (FD_ISSET(httpsfd, &(pool.ready_set))) {
+        if (FD_ISSET(httpsfd, &(pool.rready_set))) {
             log_info("A new HTTPS connection");
             pool.nready--;
             SSL* ctx = proc_https_conn(httpsfd, &pool);

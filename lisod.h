@@ -2,6 +2,7 @@
 #define _LISOD_H_
 
 #include <errno.h>
+#include <sys/select.h>
 #include <openssl/ssl.h>
 #include "request.h"
 #include "queue_buf.h"
@@ -11,6 +12,8 @@
     while ((stmt) == -1 && errno == EINTR); // loop when interrupted by signal
 
 #define SERVER_VERSION "liso/1.0"
+#define MAX_CLIENTS \
+    ((FD_SETSIZE - 2) / 4) // leave 2 select-fd for HTTP and HTTPS ports. And each client will select 4 fds.
 
 
 
@@ -24,14 +27,29 @@ typedef struct {
     SSL *client_context;
     int sockfd;   // (-1) when this client doesn't exist
 
-    qbuf_t *rbuf; // used for reading requests
-    qbuf_t *wbuf; // used for writing responses
+    int need_close;
 
     parse_fsm_t pfsm; // buffer used for receving pipelined request
     Request request; // the current parsed request
-
-    int need_close;
 } http_client_t;
+
+typedef struct {
+    int maxfd;
+
+    fd_set read_set;
+    fd_set write_set;
+    fd_set wready_set;
+    fd_set rready_set;
+
+    int nready;
+    int maxci;
+
+    SSL_CTX *ssl_ctx;
+    
+    int httpfd;
+    int httpsfd;
+    http_client_t clients[MAX_CLIENTS];
+} client_pool_t;
 
 int liso_nb_recv(http_client_t *c, void* buf, size_t len);
 int liso_nb_send(http_client_t *c, void* buf, size_t len);

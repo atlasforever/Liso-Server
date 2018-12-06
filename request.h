@@ -1,9 +1,10 @@
 #ifndef _REQUEST_H_
 #define _REQUEST_H_
 
+#include "queue_buf.h"
+
 /* Size limits in HTTP Message */
 #define REQUEST_MAX_SIZE 8192
-#define RESPONSE_MAX_SIZE_EXP_BODY 2048
 #define HTTP_VERSION_MAX_SIZE 32
 #define HTTP_METHOD_MAX_SIZE 32
 #define HTTP_URI_MAX_SIZE 2048
@@ -22,13 +23,17 @@ struct Request_header
 // HTTP Request States
 typedef enum {
     READ_REQ_HEADERS,
-    WAIT_STATIC_REQ_BODY,
-    WAIT_CGI_REQ_BODY,
+    // WAIT_STATIC_REQ_BODY,
+    // WAIT_CGI_REQ_BODY,
+	WAIT_REQ_BODY,
     SEND_STATIC_HEADERS,	// Headers of response for static content 
     SEND_CONTENT,	// Can be a static content file or CGI's output 
     CLOSE
 } request_states_t;
-
+typedef enum {
+	STATIC_RESOURCE,
+	DYNAMIC_RESOURCE
+} request_resource_t;
 // HTTP Request Header
 typedef struct
 {
@@ -38,20 +43,22 @@ typedef struct
 	Request_header *headers;	// dummy head of linked list for headers 
 	int header_count;
 
-	// Response headers buffer
-	char resp_headers[RESPONSE_MAX_SIZE_EXP_BODY];
-
 	request_states_t states;
+	request_resource_t resource_type;
+
 	int rfd; // file or CGI-pipe fd this request needs to read from
 	int wfd; // file or CGI-pipe fd this request needs to write to
+	// Response for static request, except the static-file-body part.
+	qbuf_t *readbuf;
+	qbuf_t *writebuf;
 } Request;
 
 
 int init_request(Request *r);
-void free_request(Request *rqst);
-int do_request(Request *request, int sockfd);
-int response_error(int code, int fd);
-
+void reset_request(Request* r);
+int do_request(Request *request);
+void response_error(int code, Request *r);
+int is_cgi_request(Request *r);
 
 // Default error pages
 #define HTTP_400_PAGE "<html><head>\r    \

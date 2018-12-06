@@ -9,10 +9,11 @@ typedef struct {
     size_t num;
 } qbuf_t;
 
-int init_qbuf(qbuf_t *qb, size_t len);
+int alloc_qbuf(qbuf_t *qb, size_t len);
 size_t get_qbuf_emptys(qbuf_t *qb);
-size_t write_qbuf(qbuf_t *qb, const char *src, size_t num);
-size_t read_qbuf(qbuf_t *qb, char *dst, size_t num);
+void clean_qbuf(qbuf_t *qb);
+size_t produce_qbuf(qbuf_t *qb, const char *src, size_t num);
+size_t consume_qbuf(qbuf_t *qb, char *dst, size_t num);
 int is_qbuf_empty(qbuf_t *qb);
 void free_qbuf(qbuf_t *qb);
 #endif

@@ -2,7 +2,7 @@
 #include <string.h>
 #include "queue_buf.h"
 
-int init_qbuf(qbuf_t *qb, size_t len)
+int alloc_qbuf(qbuf_t *qb, size_t len)
 {
     char *b;
     
@@ -25,11 +25,16 @@ size_t get_qbuf_emptys(qbuf_t *qb)
     return qb->maxsize - qb->num;
 }
 
+void clean_qbuf(qbuf_t *qb)
+{
+    qb->in_pos = qb->out_pos = 0;
+    qb->num = 0;
+}
 /*
  * Return n numbers of copied char. n will be less than num if the buffer
  * don't have enough space.
  */
-size_t write_qbuf(qbuf_t *qb, const char *src, size_t num)
+size_t produce_qbuf(qbuf_t *qb, const char *src, size_t num)
 {
     size_t emptys = get_qbuf_emptys(qb);
     size_t n = emptys > num? num : emptys;
@@ -54,7 +59,7 @@ size_t write_qbuf(qbuf_t *qb, const char *src, size_t num)
     return n;
 }
 
-size_t read_qbuf(qbuf_t *qb, char *dst, size_t num)
+size_t consume_qbuf(qbuf_t *qb, char *dst, size_t num)
 {
     size_t n = num > qb->num ? qb->num : num;
 

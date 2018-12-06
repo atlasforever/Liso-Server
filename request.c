@@ -13,59 +13,69 @@
 #include "lisod.h"
 #include "request.h"
 
+#define WRITE_BUFFER_MAX_SIZE 2048
+#define READ_BUFFER_MAX_SIZE 2048
+
 extern char *www_folder;
-
+extern client_pool_t pool;
 const char *default_index = "index.html";
+const char *cgi_path = "/cgi/";
 
-static int do_GET_request(Request *request, int fd);
-static int do_HEAD_request(Request *request, int fd);
-static int do_POST_request(Request *request, int fd);
+static int do_GET_request(Request *request);
+static int do_HEAD_request(Request *request);
+static int do_POST_request(Request *request);
 static int send_body_by_file(char *filepath, size_t len, int fd);
 static int send_body_by_buf(char *body, size_t len, int fd);
-static int end_headers(int fd, int hasBody);
-static int send_header(char *name, char *value, int fd);
-static int send_response_line(char *version, int code, char *phrase, int fd);
+static void add_status_line(char *version, int code, char *phrase, Request *r);
+static void add_rsp_header(char *name, char *value, Request *r);
+static void end_rsp_headers(Request *r);
 static unsigned long get_file_size(char *path);
 static char *get_MMIE(const char *filename);
 static int get_mtime(const char *path, time_t *mt);
 static char* get_header_value(Request *request, const char *name);
 
 
-
-int do_request(Request *request, int sockfd)
+/* 
+ * 0: ok.
+ * 1: ok. But this connection need to be closed.
+ * < 0: (-HTTP STATUS CODE). Error. Need to close the connection
+ */
+int do_request(Request *request)
 {
     // Not compatible with HTTP 1.0
     if (strcmp(HTTP_VERSION, request->http_version) != 0) {
-        response_error(HTTP_BAD_REQUEST, sockfd);
+        return -HTTP_BAD_REQUEST;
     }
 
     if (strcmp("GET", request->http_method) == 0) {
-        return do_GET_request(request, sockfd);
+        return do_GET_request(request);
     } else if (strcmp("HEAD", request->http_method) == 0) {
-        return do_HEAD_request(request, sockfd);
+        return do_HEAD_request(request);
     } else if (strcmp("POST", request->http_method) == 0) {
-        return do_POST_request(request, sockfd);
+        return do_POST_request(request);
+    } else {
+        return -HTTP_NOT_IMPLEMENTED;
     }
-
-    return response_error(HTTP_NOT_IMPLEMENTED, sockfd);
 }
 
-/* 0: ok. 
- * 1: ok. client wants to close the connection
- * -1: error. Need to close the connection
+/* 
+ * 0: ok.
+ * 1: ok. But this connection need to be closed.
+ * < 0: (-HTTP STATUS CODE). Error. Need to close the connection
  */
-static int do_GET_request(Request *request, int fd)
+static int do_GET_request(Request *request)
 {
     struct tm *stm;
     time_t now, mtime;
     char msg[35], mtbuf[35];
     unsigned long sz;
+    int close_flag;
+
 
     log_info("A GET Request");
     char *path = malloc(HTTP_URI_MAX_SIZE + 256);
     if (!path) {
-        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
-        return 0;
+        return -HTTP_INTERNAL_SERVER_ERROR;
     }
 
     /* Generate the actual file path */
@@ -85,26 +95,23 @@ static int do_GET_request(Request *request, int fd)
         // only support "abs_path"
         log_info("A invalid path:%s", request->http_uri);
         free(path);
-        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
-        return 0;
+        return -HTTP_NOT_FOUND;
     }
 
     log_debug("finnaly, path is:%s", path);
     if (access(path, F_OK | R_OK) != 0) {
         log_debug("fail to read this file:%s", path);
         free(path);
-        if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
-        return 0;
+        return -HTTP_NOT_FOUND;
     }
     sz = get_file_size(path);
     if (sz == -1) {
         log_error("get_file_size failed");
         free(path);
-        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
-        return 0;
+        return -HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    // get time. gmtime() is NOT thread safe
+    // get time. Notice that gmtime() is NOT thread safe
     now = time(0);
     stm = gmtime(&now);
     strftime(msg, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
@@ -112,37 +119,41 @@ static int do_GET_request(Request *request, int fd)
     // last modified
     if (get_mtime(path, &mtime) == -1) {
         free(path);
-        if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;};
-        return 0;
+        return -HTTP_INTERNAL_SERVER_ERROR;
     }
     stm = gmtime(&mtime);
     strftime(mtbuf, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
+    // Detect Connection field
+    char *cnt = get_header_value(request, "Connection");
+    if (cnt && (strcmp(cnt, "close") == 0)) {
+        close_flag = 1;
+    } else {
+        close_flag = 0;
+    }
 
 
-    if (send_response_line(HTTP_VERSION, HTTP_OK, "OK", fd) == -1) {free(path); return -1;}  
-    if (send_header("Date", msg, fd) == -1) {free(path); return -1;}
-    if (send_header("Connection", "keep-alive", fd) == -1) {free(path); return -1;}
-    if (send_header("Server", SERVER_VERSION, fd) == -1) {free(path); return -1;}
+    add_status_line(HTTP_VERSION, HTTP_OK, "OK", request);
+    add_rsp_header("Date", msg, request);
+    add_rsp_header("Connection", close_flag ? "close" : "keep-alive", request);
+    add_rsp_header("Server", SERVER_VERSION, request);
     sprintf(msg, "%ld", sz);
-    if (send_header("Content-Length", msg, fd) == -1) {free(path); return -1;}
-    if (send_header("Content-Type", get_MMIE(path), fd) == -1) {free(path); return -1;}
-    if (send_header("Last-Modified", mtbuf, fd) == -1) {free(path); return -1;}
-    if (end_headers(fd, 1) == -1) {free(path); return -1;}
+    add_rsp_header("Content-Length", msg, request);
+    add_rsp_header("Content-Type", get_MMIE(path), request);
+    add_rsp_header("Last-Modified", mtbuf, request);
+    end_rsp_headers(request);
     if (send_body_by_file(path, sz, fd) == -1) {free(path); return -1;}
 
     free(path);
-
-    char *v = get_header_value(request, "Connection");
-    if (!v || strcmp(v, "close") == 0) {
-        return 0;
-    } else {
+    if (close_flag) {
         return 1;
+    } else {
+        return 0;
     }
 }
 
 /* Just copy-and-paste from do_GET_request() */
-static int do_HEAD_request(Request *request, int fd)
+static int do_HEAD_request(Request *request)
 {
     struct tm *stm;
     time_t now, mtime;
@@ -218,15 +229,16 @@ static int do_HEAD_request(Request *request, int fd)
     if (end_headers(fd, 1) == -1) {free(path); return -1;}
 
     free(path);
-    char *v = get_header_value(request, "Connection");
-    if (!v || strcmp(v, "close") == 0) {
-        return 0;
-    } else {
+
+    char *cnt = get_header_value(request, "Connection");
+    if (cnt && (strcmp(cnt, "close") == 0)) {
         return 1;
+    } else {
+        return 0;
     }
 }
 
-static int do_POST_request(Request *request, int fd)
+static int do_POST_request(Request *request)
 {
     Request_header *first_hdr = request->headers->next;
     char *v;
@@ -262,47 +274,53 @@ static int do_POST_request(Request *request, int fd)
         }
     }
 
-    v = get_header_value(request, "Connection");
-    if (!v || strcmp(v, "close") == 0) {
-        return 0;
-    } else {
+    char *cnt = get_header_value(request, "Connection");
+    if (cnt && (strcmp(cnt, "close") == 0)) {
         return 1;
+    } else {
+        return 0;
     }
 }
 
-int response_error(int code, int fd)
+/* Prepare response for errors and stop original process */
+void response_error(int code, Request *r)
 {
     char msg[64], *body;
-    int len;
     struct tm *stm;
     time_t now;
 
+    // Stop what we originally want to send
+    if (r->rfd != -1) {
+        FD_CLR(r->rfd, &pool.read_set);
+        close(r->rfd);
+    }
+    if (r->wfd != -1) {
+        FD_CLR(r->wfd, &pool.write_set);
+        close(r->wfd);
+    }
+    // just send error response and exit this request
+    r->states = SEND_STATIC_HEADERS;
+
+    clean_qbuf(r->writebuf);
     switch (code) {
     case HTTP_NOT_FOUND:
-        if (send_response_line(HTTP_VERSION, HTTP_NOT_FOUND, "Not Found", fd) == -1) {return -1;}
-        len = strlen(HTTP_404_PAGE);
+        add_status_line(HTTP_VERSION, HTTP_NOT_FOUND, "Not Found", r);
         body = HTTP_404_PAGE;
         break;
     case HTTP_NOT_ALLOWED:
-        if (send_response_line(HTTP_VERSION, HTTP_NOT_ALLOWED, "Not Allowed", fd) == -1) {return -1;}
-        len = strlen(HTTP_405_PAGE);
+        send_response_line(HTTP_VERSION, HTTP_NOT_ALLOWED, "Not Allowed", r);
         body = HTTP_405_PAGE;
         break;
     case HTTP_INTERNAL_SERVER_ERROR:
-        if (send_response_line(HTTP_VERSION, HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error", fd) == -1) {
-            return -1;
-        }
-        len = strlen(HTTP_500_PAGE);
+        send_response_line(HTTP_VERSION, HTTP_INTERNAL_SERVER_ERROR, "Internal Server Error", r);
         body = HTTP_500_PAGE;
         break;
     case HTTP_NOT_IMPLEMENTED:
-        if (send_response_line(HTTP_VERSION, HTTP_NOT_IMPLEMENTED, "Not Implemented", fd) == -1) {return -1;}
-        len = strlen(HTTP_501_PAGE);
+        send_response_line(HTTP_VERSION, HTTP_NOT_IMPLEMENTED, "Not Implemented", r);
         body = HTTP_501_PAGE;
         break;
-    default:    /* Default is Bad Request */
-        if (send_response_line(HTTP_VERSION, HTTP_BAD_REQUEST, "Bad Request", fd) == -1) {return -1;}
-        len = strlen(HTTP_400_PAGE);
+    default:
+        send_response_line(HTTP_VERSION, HTTP_BAD_REQUEST, "Bad Request", r);
         body = HTTP_400_PAGE;
         break;
     }
@@ -311,20 +329,20 @@ int response_error(int code, int fd)
     stm = gmtime(&now);
     strftime(msg, 64, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
-    if (send_header("Date", msg, fd) == -1) {return -1;}
-    if (send_header("Connection", "close", fd) == -1) {return -1;}
-    if (send_header("Server", SERVER_VERSION, fd) == -1) {return -1;}
+    add_rsp_header("Date", msg, r);
+    add_rsp_header("Connection", "close", r);
+    add_rsp_header("Server", SERVER_VERSION, r);
 
-    sprintf(msg, "%d", len);
-    if (send_header("Content-Length", msg, fd) == -1) {return -1;}
-    if (end_headers(fd, 1) == -1) {return -1;}
-
-    if (send_body_by_buf(body, len, fd) == -1) {return -1;}
-
-    return 0;
+    sprintf(msg, "%d", strlen(body));
+    add_rsp_header("Content-Length", msg, r);
+    end_rsp_headers(r);
 }
 
 
+int is_cgi_request(Request *r)
+{
+    return (strncmp(cgi_path, r->http_uri, strlen(cgi_path)) == 0);
+}
 
 static char* get_header_value(Request *request, const char *name)
 {
@@ -413,98 +431,75 @@ static int send_body_by_file(char *filepath, size_t len, int fd)
     return 0;
 }
 
-static int send_body_by_buf(char *body, size_t len, int fd)
+static void append_def_err_page(char *body, Request *r)
 {
-    ssize_t sn;
-
-    NO_TEMP_FAILURE(sn = send(fd, body, len, 0));
-    if (sn != len) {
-        return -1;
+    size_t len = strlen(body);
+    if (len > get_qbuf_emptys(r->writebuf)) {
+        log_error("Buffer is not enough for error page");
+        return;
     }
-    return 0;
+
+    produce_qbuf(r->writebuf, body, len);
 }
-static int end_headers(int fd, int hasBody)
+static void end_rsp_headers(Request *r)
 {
-    ssize_t sn;
-    int flags;
-
-    flags = hasBody? MSG_MORE : 0;
-    NO_TEMP_FAILURE(sn = send(fd, "\r\n", 2, flags));
-    if (sn != 2) {
-        return -1;
+    if (2 > get_qbuf_emptys(r->writebuf)) {
+        log_error("Your headers are too long! Don't send end");
+        return;
     }
-    return 0;
+
+    produce_qbuf(r->writebuf, "\r\n", 2);
 }
-static int send_header(char *name, char *value, int fd)
+static void add_rsp_header(char *name, char *value, Request *r)
 {
-    int nl = strlen(name);
-    int vl = strlen(value); 
-    ssize_t sn;
-
-    NO_TEMP_FAILURE(sn = send(fd, name, nl, MSG_MORE));
-    if (sn != nl) {
-        return -1;
+    size_t nl = strlen(name);
+    size_t vl = strlen(value); 
+    size_t total = nl + 2 + vl + 2;// include ": " and "\r\n"
+    
+    if (total > get_qbuf_emptys(r->writebuf)) {
+        log_error("Your headers are too long! Don't send this header");
+        return;
     }
 
-    NO_TEMP_FAILURE(sn = send(fd, ": ", 2, MSG_MORE));
-    if (sn != 2) {
-        return -1;
-    }
-
-    NO_TEMP_FAILURE(sn = send(fd, value, vl, MSG_MORE));
-    if (sn != vl) {
-        return -1;
-    }
-
-    NO_TEMP_FAILURE(sn = send(fd, "\r\n", 2, MSG_MORE));
-    if (sn != 2) {
-        return -1;
-    }
-    return 0;
+    produce_qbuf(r->writebuf, name, nl);
+    produce_qbuf(r->writebuf, ": ", 2);
+    produce_qbuf(r->writebuf, value, vl);
+    produce_qbuf(r->writebuf, "\r\n", 2);
 }
-static int send_response_line(char *version, int code, char *phrase, int fd)
+static void add_status_line(char *version, int code, char *phrase, Request *r)
 {
-    char cstr[6];
-    int vl = strlen(version);
-    int pl = strlen(phrase);
-    ssize_t sn;
-
-    NO_TEMP_FAILURE(sn = send(fd, version, vl, MSG_MORE));
-    if (sn != vl) {
-        return -1;
+    const size_t MIDDLE = 1 + 3 + 1; // SP code SP
+    char cstr[MIDDLE + 1];
+    size_t vl = strlen(version);
+    size_t pl = strlen(phrase);
+    size_t total = vl + MIDDLE + pl + 2;
+    
+    if (total > get_qbuf_emptys(r->writebuf)) {
+        log_error("Your status line is too long! Don't send it");
+        return;
     }
-
     snprintf(cstr, 6, " %d ", code);
-    NO_TEMP_FAILURE(sn = send(fd, cstr, 5, MSG_MORE));
-    if (sn != 5) {
-        return -1;
-    }
 
-    NO_TEMP_FAILURE(sn = send(fd, phrase, pl, MSG_MORE));
-    if (sn != pl) {
-        return -1;
-    }
-
-    NO_TEMP_FAILURE(sn = send(fd, "\r\n", 2, MSG_MORE));
-    if (sn != 2) {
-        return -1;
-    }
-    return 0;
+    produce_qbuf(r->writebuf, version, vl);
+    produce_qbuf(r->writebuf, cstr, MIDDLE);
+    produce_qbuf(r->writebuf, phrase, pl);
+    produce_qbuf(r->writebuf, "\r\n", 2);
 }
 
 
 int init_request(Request *r)
 {
-    if (!r) {
-        return -1;
-    }
-    // A useless head
+    // It's just a dummy head for linked list.
     r->headers = (Request_header*)malloc(sizeof(Request_header));
     if (!(r->headers)) {
-        free(r);
         return -1;
     }
+    r->headers->next = NULL;
+
     r->header_count = 0;
+    alloc_qbuf(r->writebuf, WRITE_BUFFER_MAX_SIZE);
+    alloc_qbuf(r->readbuf, READ_BUFFER_MAX_SIZE);
+    r->resource_type = STATIC_RESOURCE;
     r->states = READ_REQ_HEADERS;
     r->rfd = -1;
     r->wfd = -1;
@@ -523,8 +518,24 @@ static void free_headers(Request_header* head)
     }
 }
 
-void free_request(Request* rqst)
+// It doesn't free but reuse some alloced space for next time.
+void reset_request(Request* r)
 {
-    free_headers(rqst->headers);
-    free(rqst);
+    free_headers(r->headers->next);
+    r->header_count = 0;
+
+    if (r->rfd != -1) {
+        close(r->rfd);
+        r->rfd = -1;
+    }
+    if (r->wfd != -1) {
+        close(r->wfd);
+        r->wfd = -1;
+    }
+    // Not free but clean
+    clean_qbuf(r->readbuf);
+    clean_qbuf(r->writebuf);
+
+	r->states = READ_REQ_HEADERS;
+	r->resource_type = STATIC_RESOURCE;
 }

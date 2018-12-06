@@ -42,7 +42,8 @@ typedef struct
 	char http_uri[HTTP_URI_MAX_SIZE + 1];
 	Request_header *headers;	// dummy head of linked list for headers 
 	int header_count;
-
+	int content_length;
+	
 	request_states_t states;
 	request_resource_t resource_type;
 

@@ -125,14 +125,21 @@ static int do_GET_request(Request *request)
     strftime(mtbuf, 35, "%a, %d %b %Y %H:%M:%S %Z", stm);
 
     // Detect Connection field
-    char *cnt = get_header_value(request, "Connection");
-    if (cnt && (strcmp(cnt, "close") == 0)) {
+    char *value;
+    value = get_header_value(request, "Connection");
+    if (value && (strcmp(value, "close") == 0)) {
         close_flag = 1;
     } else {
         close_flag = 0;
     }
 
+    // get content-length
+    value = get_header_value(request, "Content-Length");
+    if (value && atoi(value) > 0) {
+        request->content_length = value;
+    }
 
+    // Send headers
     add_status_line(HTTP_VERSION, HTTP_OK, "OK", request);
     add_rsp_header("Date", msg, request);
     add_rsp_header("Connection", close_flag ? "close" : "keep-alive", request);
@@ -500,6 +507,7 @@ int init_request(Request *r)
     alloc_qbuf(r->writebuf, WRITE_BUFFER_MAX_SIZE);
     alloc_qbuf(r->readbuf, READ_BUFFER_MAX_SIZE);
     r->resource_type = STATIC_RESOURCE;
+    r->content_length = 0;
     r->states = READ_REQ_HEADERS;
     r->rfd = -1;
     r->wfd = -1;
@@ -535,7 +543,7 @@ void reset_request(Request* r)
     // Not free but clean
     clean_qbuf(r->readbuf);
     clean_qbuf(r->writebuf);
-
+    r->content_length = 0;
 	r->states = READ_REQ_HEADERS;
 	r->resource_type = STATIC_RESOURCE;
 }

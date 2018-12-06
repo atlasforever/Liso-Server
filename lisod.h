@@ -51,6 +51,8 @@ typedef struct {
     http_client_t clients[MAX_CLIENTS];
 } client_pool_t;
 
-int liso_nb_recv(http_client_t *c, void* buf, size_t len);
-int liso_nb_send(http_client_t *c, void* buf, size_t len);
+int nb_recv_fd(int fd, void* buf, size_t len);
+int nb_recv_ssl(SSL *s, void* buf, size_t len);
+int nb_send_fd(int fd, void* buf, size_t len);
+int nb_send_ssl(SSL *s, void* buf, size_t len);
 #endif

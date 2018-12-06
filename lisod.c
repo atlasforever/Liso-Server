@@ -142,8 +142,13 @@ int add_client(int clientfd, SSL* ctx, client_pool_t* p)
     return -1;
 }
 
-int max(int a, int b){
+int max(int a, int b)
+{
     return a > b ? a : b;
+}
+int min(int a, int b)
+{
+    return a < b ? a : b;
 }
 static void update_rmed_maxci(client_pool_t* p)
 {
@@ -159,10 +164,13 @@ static void update_rmed_maxci(client_pool_t* p)
 static void update_rmed_maxfd(client_pool_t* p)
 {
     int maxfd = p->httpfd > p->httpsfd ? p->httpfd : p->httpsfd;
+
     for (int i = 0; i <= p->maxci; i++) {
         if (p->clients[i].sockfd != -1) {
-            if (p->clients[i].sockfd > maxfd) {
-                maxfd = p->clients[i].sockfd;
+            int v = max(p->clients[i].sockfd,
+                        max(p->clients[i].request.rfd, p->clients[i].request.wfd));
+            if (v > maxfd) {
+                maxfd = v;
             }
         }
     }
@@ -204,8 +212,7 @@ void remove_client(int old_idx, client_pool_t* p)
         update_rmed_maxci(p);
     }
 
-
-    if (p->maxfd == old_fd) {
+    if (p->maxfd == cfd || p->maxfd == rfd || p->maxfd == wfd) {
         update_rmed_maxfd(p);
     }
 }
@@ -344,78 +351,145 @@ static void liso_shutdown(int status)
 
 
 /*
- * Non-blocking IO function for HTTP or HTTPS connection.
+ * Non-blocking IO functions for HTTP or HTTPS connection.
  * 
- * Both return number of bytes transferred. -1 on error. 0 on connection closed.
+ * They return number of bytes transferred. -1 on error. 0 on connection closed.
  * -2 indicates that this function should be called again later.
  */
-int liso_nb_recv(http_client_t *c, void* buf, size_t len)
+int nb_recv_fd(int fd, void* buf, size_t len)
 {
     int rn = 0;
 
-    if (c->type == HTTPS_TYPE) {
-        rn = ssl_read(c->client_context, buf, len);
-        if (rn <= 0) {
-            int err = SSL_get_error(c->client_context, rn);
-            switch (err) {
-            case SSL_ERROR_ZERO_RETURN:
-                return 0;
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-                return -2;
-            default:
-                return -1;
-            }
+    if (len == 0) {
+        return -2;
+    }
+    NO_TEMP_FAILURE((rn = recv(fd, buf, len, MSG_DONTWAIT)));
+    if (rn == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return -2;
+        } else {
+            return -1;
         }
-    } else {
-        NO_TEMP_FAILURE((rn = recv(c->sockfd, buf, len, MSG_DONTWAIT)));
-        if (rn == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return -2;
-            } else {
-                return -1;
-            }
-        } else if (rn == 0) {
+    } else if (rn == 0) {
+        return 0;
+    }
+    return rn;
+}
+int nb_recv_ssl(SSL *s, void* buf, size_t len)
+{
+    int rn;
+
+    if (len == 0) {
+        return -2;
+    }
+    rn = SSL_read(s, buf, len);
+    if (rn <= 0) {
+        int err = SSL_get_error(s, rn);
+        switch (err) {
+        case SSL_ERROR_ZERO_RETURN:
             return 0;
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+            return -2;
+        default:
+            return -1;
         }
     }
     return rn;
 }
-int liso_nb_send(http_client_t *c, void* buf, size_t len)
+int nb_send_fd(int fd, void* buf, size_t len)
 {
     int sn = 0;
 
-    if (c->type == HTTPS_TYPE) {
-        sn = ssl_write(c->client_context, buf, len);
-        if (sn <= 0) {
-            int err = SSL_get_error(c->client_context, sn);
-            switch (err) {
-            case SSL_ERROR_ZERO_RETURN:
-                return 0;
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-                return -2;
-            default:
-                return -1;
-            }
+    if (len == 0) {
+        return -2;
+    }
+    NO_TEMP_FAILURE((sn = send(fd, buf, len, MSG_DONTWAIT)));
+    if (sn == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return -2;
+        } else {
+            return -1;
         }
-    } else {
-        NO_TEMP_FAILURE((sn = send(c->sockfd, buf, len, MSG_DONTWAIT)));
-        if (sn == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return -2;
-            } else {
-                return -1;
-            }
-        } else if (sn == 0) {
+    } else if (sn == 0) {
+        return 0;
+    }
+    return sn;
+}
+int nb_send_ssl(SSL *s, void* buf, size_t len)
+{
+    int sn = 0;
+
+    if (len == 0) {
+        return -2;
+    }
+    sn = SSL_write(s, buf, len);
+    if (sn <= 0) {
+        int err = SSL_get_error(s, sn);
+        switch (err) {
+        case SSL_ERROR_ZERO_RETURN:
             return 0;
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+            return -2;
+        default:
+            return -1;
         }
     }
     return sn;
 }
 
+/*
+ * -1 on connection error. 0 on discard completed. 1 on not yet completed 
+ */
+int discard_req_body(http_client_t *c)
+{
+    if (c->request.content_length == 0) {
+        return 0;
+    }
 
+    clean_qbuf(c->request.readbuf);
+    size_t len = min(c->request.content_length, get_qbuf_emptys(c->request.readbuf));
+    int rn;
 
+    // Request line and headers are not here. So it's OK
+    clean_qbuf(c->request.readbuf);
+    if (c->type == HTTP_TYPE) {
+        rn = nb_recv_fd(c->sockfd, c->request.readbuf->buf, len);
+    } else {
+        rn = nb_recv_ssl(c->client_context, c->request.readbuf->buf, len);
+    }
+
+    if (rn == -1 || rn == 0) {
+        return -1;
+    } else if (rn == -2) {
+        return 1;
+    } else {
+        c->request.content_length -= rn;
+        return (c->request.content_length == 0 ? 0 : 1);
+    }
+}
+
+/*
+ * -2 on cgi error. -1 on connection error. 0 on completed. 1 on not completed.
+ */
+int req_body_to_cgi(http_client_t *c)
+{
+    Request *r = &(c->request);
+    size_t emptys = get_qbuf_emptys(r->readbuf);
+    size_t len = min(emptys, r->content_length);
+    int rn;
+
+    if (r->content_length == 0) {
+        return 0;
+    }
+    if (c->type == HTTP_TYPE) {
+        //rn = nb_recv_fd(c->sockfd, c->request.readbuf->buf, len);
+    } else {
+        //rn = nb_recv_ssl(c->client_context, c->request.readbuf->buf, len);
+    }
+
+}
 
 
 /**
@@ -496,7 +570,7 @@ void proc_clients(client_pool_t* p)
         int connfd = cl->sockfd;
 
         /* ready to read */
-        if ((connfd > 0) && (FD_ISSET(connfd, &(p->ready_set)))) {
+        if ((connfd > 0) && (FD_ISSET(connfd, &(p->rready_set)))) {
             p->nready--;
             rn = recv_one_request(&(p->clients[i]));
             if (rn == -1) {
@@ -543,6 +617,9 @@ void proc_clients(client_pool_t* p)
         }
         switch (cl->request.states) {
         case READ_REQ_HEADERS:
+
+            // When there is a error, just send a response and close this connection.
+            // So don't care about body.
             if (FD_ISSET(connfd, &(p->rready_set))) {
                 p->nready--;
                 int rn = recv_one_request(cl);
@@ -557,7 +634,8 @@ void proc_clients(client_pool_t* p)
                     int parse_r = parse(cl->pfsm.buf, rn, &(cl->request));
                     log_debug("parse() return %d", parse_r);
 
-                    if (parse_r == 0) {   // successful parsed
+                    if (parse_r == 0) {
+                        // A parsed request. Handle request line and headers
                         int do_ret = do_request(&(cl->request));
                         if (do_ret >= 0) {
                             cl->request.states = WAIT_REQ_BODY;
@@ -565,17 +643,46 @@ void proc_clients(client_pool_t* p)
                                 cl->need_close = 1;
                             }
                         } else {
+                            response_error(-do_ret, &(cl->request));
                             cl->request.states = SEND_STATIC_HEADERS;
                             cl->need_close = 1;
                         }
                     } else {
                         response_error(HTTP_BAD_REQUEST, &(cl->request));
                         cl->request.states = SEND_STATIC_HEADERS;
+                        cl->need_close = 1;
                     }
                 }
             }
             break;
         case WAIT_REQ_BODY:
+        // what happened when length is 0, and wfd is open?
+            if (cl->request.content_length == 0) {
+                cl->request.states = SEND_STATIC_HEADERS;
+                if (cl->request.wfd != -1) {
+                    close(cl->request.wfd);
+                }
+
+            } else if (FD_ISSET(connfd, &p->rready_set)) {
+
+                p->nready--;
+                if (cl->request.resource_type == STATIC_RESOURCE) {
+
+                    int ret = discard_req_body(cl);
+                    if (ret == -1) {
+                        cl->need_close = 1;
+                        cl->request.states = CLOSE;
+                    } else if (ret == 0) {
+                        cl->request.states = SEND_STATIC_HEADERS;
+                    } else {/* Keep discarding */}
+
+                } else if (cl->request.resource_type == DYNAMIC_RESOURCE
+                            && (cl->request.wfd != -1)) {
+                    
+                    int ret = 
+                } else {}
+
+            } else {}
             break;
         case SEND_STATIC_HEADERS:
             //break;

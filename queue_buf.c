@@ -2,6 +2,8 @@
 #include <string.h>
 #include "queue_buf.h"
 
+static void _fix_qbuf(qbuf_t *qb);
+
 int alloc_qbuf(qbuf_t *qb, size_t len)
 {
     char *b;
@@ -33,55 +35,32 @@ void clean_qbuf(qbuf_t *qb)
 /*
  * Return n numbers of copied char. n will be less than num if the buffer
  * don't have enough space.
+ * 
+ * qbuf can't be a ring buffer because there would be many interfaces.
  */
 size_t produce_qbuf(qbuf_t *qb, const char *src, size_t num)
 {
     size_t emptys = get_qbuf_emptys(qb);
-    size_t n = emptys > num? num : emptys;
+    size_t minlen = num < emptys ? num : emptys;
 
-    if (n == 0) {
-        return 0;
-    }
-
-    if (qb->in_pos >= qb->out_pos) {
-        size_t right_offset = qb->maxsize - qb->in_pos;
-        size_t rwriten = right_offset > n ? n : right_offset;
-        size_t lwriten = n - rwriten;
-        
-        memcpy(qb->in_pos, src, rwriten);
-        memcpy(qb->buf, src + rwriten, lwriten);
-        qb->in_pos = (qb->in_pos + n) % qb->maxsize;
-    } else {
-        memcpy(qb->in_pos, src, n);
-        qb->in_pos += n;
-    }
-    qb->num += n;
-    return n;
+    _fix_qbuf(qb);
+    memcpy(qb->buf + qb->in_pos, src, minlen);
+    qb->num += minlen;
+    qb->in_pos += minlen;
+    return minlen; 
 }
-
 size_t consume_qbuf(qbuf_t *qb, char *dst, size_t num)
 {
-    size_t n = num > qb->num ? qb->num : num;
+    size_t e = get_qbuf_emptys(qb);
+    size_t m = num < e ? num : e;
 
-    if (n == 0) {
-        return 0;
-    }
-
-    if (qb->in_pos >= qb->out_pos) {
-        memcpy(dst, qb->out_pos, n);
-        qb->out_pos += n;
-    } else {
-        size_t right_offset = qb->maxsize - qb->out_pos;
-        size_t rreadn = right_offset > n ? n : right_offset;
-        size_t lreadn = n - rreadn;
-
-        memcpy(dst, qb->out_pos, rreadn);
-        memcpy(dst + rreadn, qb->buf, lreadn);
-        qb->out_pos = (qb->out_pos + n) % qb->maxsize;
-    }
-    qb->num -= n;
-    return n;
+    memcpy(qb->buf + qb->out_pos, dst, m);
+    qb->out_pos -= m;
+    qb->num -= m;
+    _fix_qbuf(qb);
+    return m;
 }
+
 int is_qbuf_empty(qbuf_t *qb)
 {
     return qb->num == qb->maxsize;
@@ -91,4 +70,28 @@ int is_qbuf_empty(qbuf_t *qb)
 void free_qbuf(qbuf_t *qb)
 {
     free(qb->buf);
+    qb->maxsize = 0;
+    clean_qbuf(qb);
+}
+
+static void _fix_qbuf(qbuf_t *qb)
+{
+    if (qb->out_pos > 0) {
+        for (int i = 0; i < qb->num; i++) {
+            qb->buf[i] = qb->buf[qb->out_pos + i];
+        }
+    }
+
+    qb->in_pos -= qb->out_pos;
+    qb->out_pos = 0;
+}
+char *get_qbuf_inaddr(qbuf_t *qb)
+{
+    _fix_qbuf(qb);
+    return qb->buf + qb->in_pos;
+}
+char *get_qbuf_outaddr(qbuf_t *qb)
+{
+    _fix_qbuf(qb);
+    return qb->buf;
 }

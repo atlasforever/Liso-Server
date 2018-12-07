@@ -353,8 +353,8 @@ static void liso_shutdown(int status)
 /*
  * Non-blocking IO functions for HTTP or HTTPS connection.
  * 
- * They return number of bytes transferred. -1 on error. 0 on connection closed.
- * -2 indicates that this function should be called again later.
+ * They return number of bytes transferred(You shouldn't pass 0 as len). -1 on error. 0 on connection closed.
+ * -2 indicates that this function should be called again later. (EAGAIN)
  */
 int nb_recv_fd(int fd, void* buf, size_t len)
 {
@@ -442,53 +442,68 @@ int nb_send_ssl(SSL *s, void* buf, size_t len)
 /*
  * -1 on connection error. 0 on discard completed. 1 on not yet completed 
  */
-int discard_req_body(http_client_t *c)
+void discard_req_body(http_client_t *c)
 {
-    if (c->request.content_length == 0) {
-        return 0;
-    }
-
     clean_qbuf(c->request.readbuf);
-    size_t len = min(c->request.content_length, get_qbuf_emptys(c->request.readbuf));
-    int rn;
-
-    // Request line and headers are not here. So it's OK
-    clean_qbuf(c->request.readbuf);
-    if (c->type == HTTP_TYPE) {
-        rn = nb_recv_fd(c->sockfd, c->request.readbuf->buf, len);
-    } else {
-        rn = nb_recv_ssl(c->client_context, c->request.readbuf->buf, len);
-    }
-
-    if (rn == -1 || rn == 0) {
-        return -1;
-    } else if (rn == -2) {
-        return 1;
-    } else {
-        c->request.content_length -= rn;
-        return (c->request.content_length == 0 ? 0 : 1);
-    }
 }
 
 /*
- * -2 on cgi error. -1 on connection error. 0 on completed. 1 on not completed.
+ * 0 on ok. -1 on connection closed. -2 on read errors. 
  */
-int req_body_to_cgi(http_client_t *c)
+int get_partial_req_body(http_client_t *c)
 {
     Request *r = &(c->request);
     size_t emptys = get_qbuf_emptys(r->readbuf);
     size_t len = min(emptys, r->content_length);
     int rn;
 
-    if (r->content_length == 0) {
+    // nothing to read
+    if (len == 0) {
         return 0;
     }
+    
     if (c->type == HTTP_TYPE) {
-        //rn = nb_recv_fd(c->sockfd, c->request.readbuf->buf, len);
+        rn = nb_recv_fd(c->sockfd, get_qbuf_inaddr(r->readbuf), len);
     } else {
-        //rn = nb_recv_ssl(c->client_context, c->request.readbuf->buf, len);
+        rn = nb_recv_ssl(c->client_context, get_qbuf_inaddr(r->readbuf), len);
+    }
+    
+    if (rn == -2) {
+        return 0;
+    } else if (rn == -1) {
+        return -2;
+    } else if (rn == 0) {
+        return -1;
+    }
+    r->content_length -= rn;
+    r->readbuf->num += rn;
+    r->readbuf->in_pos += rn;
+    return 0;
+}
+/*
+ * 0 on ok. -1 on pipe closed(CGI itself shouldn't close). -2 on write errors.
+ */
+int partial_body_to_cgi(http_client_t *c)
+{
+    Request *r = &(c->request);
+    size_t n = r->readbuf->num;
+    int wn;
+
+    if (n == 0) {
+        return 0;
     }
 
+    wn = nb_send_fd(r->wfd, get_qbuf_outaddr(r->readbuf), n);
+    if (wn == -2) {
+        return 0;
+    } else if (wn == -1) {
+        return -2;
+    } else if (wn == 0) {
+        return -1;
+    }
+    r->readbuf->num -= wn;
+    r->readbuf->out_pos += wn;
+    return 0;
 }
 
 
@@ -622,7 +637,9 @@ void proc_clients(client_pool_t* p)
             // So don't care about body.
             if (FD_ISSET(connfd, &(p->rready_set))) {
                 p->nready--;
-                int rn = recv_one_request(cl);
+                int rn;
+
+                rn = recv_one_request(cl);
                 if (rn == 0) {
                     log_debug("Read the rest part next time");
                     // continue;
@@ -656,36 +673,45 @@ void proc_clients(client_pool_t* p)
             }
             break;
         case WAIT_REQ_BODY:
-        // what happened when length is 0, and wfd is open?
-            if (cl->request.content_length == 0) {
+            // No message body to read or to send
+            if (cl->request.content_length == 0 && cl->request.readbuf->num == 0) {
                 cl->request.states = SEND_STATIC_HEADERS;
-                if (cl->request.wfd != -1) {
-                    close(cl->request.wfd);
-                }
+            }
 
-            } else if (FD_ISSET(connfd, &p->rready_set)) {
-
+            if (cl->request.content_length > 0 && FD_ISSET(connfd, &p->rready_set)) {
                 p->nready--;
-                if (cl->request.resource_type == STATIC_RESOURCE) {
-
-                    int ret = discard_req_body(cl);
-                    if (ret == -1) {
+                if (get_partial_req_body(cl) < 0) {
+                    // Don't allow client close before we send response.
+                    cl->need_close = 1;
+                    cl->request.states = CLOSE;
+                }
+            }
+            if (cl->request.readbuf->num > 0) {
+                if (cl->request.resource_type == DYNAMIC_RESOURCE
+                    && FD_ISSET(cl->request.wfd , &p->wready_set)) {
+                       p->nready--;
+                    if (partial_body_to_cgi(cl) < 0) {
+                        remember to close wfd after send complete
+                    // Don't allow CGI close before we close wfd.
+                        response_error(HTTP_INTERNAL_SERVER_ERROR, &cl->request);
                         cl->need_close = 1;
-                        cl->request.states = CLOSE;
-                    } else if (ret == 0) {
                         cl->request.states = SEND_STATIC_HEADERS;
-                    } else {/* Keep discarding */}
-
-                } else if (cl->request.resource_type == DYNAMIC_RESOURCE
-                            && (cl->request.wfd != -1)) {
-                    
-                    int ret = 
-                } else {}
-
-            } else {}
+                    } 
+                } else if (cl->request.resource_type == STATIC_RESOURCE) {
+                    discard_req_body(cl);
+                }
+            }
             break;
         case SEND_STATIC_HEADERS:
-            //break;
+            if (cl->request.writebuf->num == 0) {
+                cl->request.states = SEND_CONTENT;
+            }
+
+            if (cl->request.writebuf->num > 0
+                && FD_ISSET(connfd, &p->wready_set)) {
+                
+            }
+            break;
         case SEND_CONTENT:
             break;
         case CLOSE:

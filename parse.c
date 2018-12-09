@@ -45,12 +45,14 @@ int parse(char* buffer, int size, Request* request)
  * Return value: n
  * n > 0: Finishing reading a whole request. Size is n
  * 0: Reading is NOT yet completed. Wait to be called nex time.
- * -1: Fail. Maybe caller should close the socket.
+ * -1: Connection error
+ * -2: Bad Request
  */
 int recv_one_request(http_client_t *client)
 {
-    ssize_t rn;
+    int rn;
     parse_fsm_t *fsm = &(client->pfsm);
+    size_t len;
 
     // Begin to read a new request
     if (fsm->compelted) {
@@ -63,12 +65,21 @@ int recv_one_request(http_client_t *client)
         fsm->idx2parse = 0;
     }
 
-    rn = liso_nb_recv(client, &fsm->buf[fsm->total_bytes], REQUEST_MAX_SIZE - fsm->total_bytes);
-    if (rn == -1 || rn == -2) {
+    len = REQUEST_MAX_SIZE - fsm->total_bytes;
+    if (len > 0) {
+        if (client->type == HTTP_TYPE) {
+            rn = nb_recv_fd(client->sockfd, &fsm->buf[fsm->total_bytes], len);
+        } else {
+            rn = nb_recv_ssl(client->client_context, &fsm->buf[fsm->total_bytes], len);
+        }
+    }
+    
+
+    if (rn == -1 || rn == 0) {
         // Client shouldn't close socket now
         fsm->compelted = 1;
         return -1;
-    } else if (rn == 0) {
+    } else if (rn == -2) {
         return 0;
     }
 
@@ -80,7 +91,7 @@ int recv_one_request(http_client_t *client)
         // Have not seen a CRLFCRLF
         if (fsm->idx2parse == fsm->total_bytes) {
             if (fsm->total_bytes == REQUEST_MAX_SIZE) {
-                return -1;  // Request is larger than MAXSIZE
+                return -2;  // Request is larger than MAXSIZE
             } else {
                 return 0;
             }

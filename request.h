@@ -23,11 +23,8 @@ struct Request_header
 // HTTP Request States
 typedef enum {
     READ_REQ_HEADERS,
-    // WAIT_STATIC_REQ_BODY,
-    // WAIT_CGI_REQ_BODY,
 	WAIT_REQ_BODY,
-    SEND_STATIC_HEADERS,	// Headers of response for static content 
-    SEND_CONTENT,	// Can be a static content file or CGI's output 
+	SEND_CONTENT,	// send all of a response
     CLOSE
 } request_states_t;
 typedef enum {
@@ -47,8 +44,8 @@ typedef struct
 	request_states_t states;
 	request_resource_t resource_type;
 
-	int rfd; // file or CGI-pipe fd this request needs to read from
-	int wfd; // file or CGI-pipe fd this request needs to write to
+	int rfd; // used to read from a fd presenting a static file or a CGI program
+	int wfd; // used to write to a fd presenting a static file or a CGI program
 	// Response for static request, except the static-file-body part.
 	qbuf_t *readbuf;
 	qbuf_t *writebuf;
@@ -60,6 +57,8 @@ void reset_request(Request* r);
 int do_request(Request *request);
 void response_error(int code, Request *r);
 int is_cgi_request(Request *r);
+void close_content_wfd(int *fd);
+void close_content_rfd(int *fd);
 
 // Default error pages
 #define HTTP_400_PAGE "<html><head>\r    \

@@ -506,6 +506,16 @@ int partial_body_to_cgi(http_client_t *c)
     return 0;
 }
 
+/*
+ * -1 
+ */
+int get_response_from_fd(http_client_t *c)
+{
+    Request *r = &c->request;
+    size_t len = get_qbuf_emptys(r->writebuf);
+
+    nb_recv_fd()
+}
 
 /**
  * internal signal handler
@@ -642,11 +652,14 @@ void proc_clients(client_pool_t* p)
                 rn = recv_one_request(cl);
                 if (rn == 0) {
                     log_debug("Read the rest part next time");
-                    // continue;
-                } else if (rn == -1) {
+
+                } else if (rn == -2) {
                     cl->need_close = 1;
                     response_error(HTTP_BAD_REQUEST, &(cl->request));
-                    cl->request.states = SEND_STATIC_HEADERS;
+                    cl->request.states = SEND_CONTENT;
+                } else if (rn == -1) {
+                    cl->need_close = 1;
+                    cl->request.states = CLOSE;
                 } else { // received a request
                     int parse_r = parse(cl->pfsm.buf, rn, &(cl->request));
                     log_debug("parse() return %d", parse_r);
@@ -661,24 +674,23 @@ void proc_clients(client_pool_t* p)
                             }
                         } else {
                             response_error(-do_ret, &(cl->request));
-                            cl->request.states = SEND_STATIC_HEADERS;
+                            cl->request.states = SEND_CONTENT;
                             cl->need_close = 1;
                         }
                     } else {
                         response_error(HTTP_BAD_REQUEST, &(cl->request));
-                        cl->request.states = SEND_STATIC_HEADERS;
+                        cl->request.states = SEND_CONTENT;
                         cl->need_close = 1;
                     }
                 }
             }
             break;
         case WAIT_REQ_BODY:
-            // No message body to read or to send
+            // No more request body to deal with
             if (cl->request.content_length == 0 && cl->request.readbuf->num == 0) {
-                cl->request.states = SEND_STATIC_HEADERS;
-            }
-
-            if (cl->request.content_length > 0 && FD_ISSET(connfd, &p->rready_set)) {
+                cl->request.states = SEND_CONTENT;
+                close_content_wfd(&cl->request.wfd);
+            } else if (cl->request.content_length > 0 && FD_ISSET(connfd, &p->rready_set)) {
                 p->nready--;
                 if (get_partial_req_body(cl) < 0) {
                     // Don't allow client close before we send response.
@@ -686,25 +698,31 @@ void proc_clients(client_pool_t* p)
                     cl->request.states = CLOSE;
                 }
             }
+
             if (cl->request.readbuf->num > 0) {
                 if (cl->request.resource_type == DYNAMIC_RESOURCE
                     && FD_ISSET(cl->request.wfd , &p->wready_set)) {
                        p->nready--;
                     if (partial_body_to_cgi(cl) < 0) {
-                        remember to close wfd after send complete
-                    // Don't allow CGI close before we close wfd.
+                        // Don't allow CGI close before we close wfd.
                         response_error(HTTP_INTERNAL_SERVER_ERROR, &cl->request);
                         cl->need_close = 1;
-                        cl->request.states = SEND_STATIC_HEADERS;
-                    } 
+                        cl->request.states = SEND_CONTENT;
+                        close_content_wfd(&cl->request.wfd);
+                    }
                 } else if (cl->request.resource_type == STATIC_RESOURCE) {
                     discard_req_body(cl);
                 }
             }
             break;
-        case SEND_STATIC_HEADERS:
-            if (cl->request.writebuf->num == 0) {
-                cl->request.states = SEND_CONTENT;
+        case SEND_CONTENT:
+
+            if (cl->request.writebuf->num == 0 && cl->request.rfd == -1) {
+                cl->request.states = CLOSE;
+            }
+
+            if (cl->request.rfd != -1 && FD_ISSET(cl->request.rfd, &p->rready_set)) {
+
             }
 
             if (cl->request.writebuf->num > 0
@@ -712,13 +730,11 @@ void proc_clients(client_pool_t* p)
                 
             }
             break;
-        case SEND_CONTENT:
-            break;
         case CLOSE:
-            if (cl->need_close) {
-                remove_client(i, &pool)
-            }
         default:
+            if (cl->need_close) {
+                remove_client(i, p);
+            }
             break;
         }
     }

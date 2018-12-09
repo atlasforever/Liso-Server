@@ -297,16 +297,11 @@ void response_error(int code, Request *r)
     time_t now;
 
     // Stop what we originally want to send
-    if (r->rfd != -1) {
-        FD_CLR(r->rfd, &pool.read_set);
-        close(r->rfd);
-    }
-    if (r->wfd != -1) {
-        FD_CLR(r->wfd, &pool.write_set);
-        close(r->wfd);
-    }
+    close_content_rfd(&r->rfd);
+    close_content_wfd(&r->wfd);
+
     // just send error response and exit this request
-    r->states = SEND_STATIC_HEADERS;
+    r->states = SEND_CONTENT;
 
     clean_qbuf(r->writebuf);
     switch (code) {
@@ -526,20 +521,34 @@ static void free_headers(Request_header* head)
     }
 }
 
+void close_content_wfd(int *fd)
+{
+    const int ifd = *fd;
+
+    if (ifd != -1) {
+        close(ifd);
+        *fd = -1;
+        FD_CLR(ifd, &pool.wready_set);
+    }
+}
+void close_content_rfd(int *fd)
+{
+    const int ifd = *fd;
+    if (ifd != -1) {
+        close(ifd);
+        *fd = -1;
+        FD_CLR(ifd, &pool.rready_set);
+    }
+}
+
 // It doesn't free but reuse some alloced space for next time.
 void reset_request(Request* r)
 {
     free_headers(r->headers->next);
     r->header_count = 0;
 
-    if (r->rfd != -1) {
-        close(r->rfd);
-        r->rfd = -1;
-    }
-    if (r->wfd != -1) {
-        close(r->wfd);
-        r->wfd = -1;
-    }
+    close_content_wfd(&r->wfd);
+    close_content_rfd(&r->rfd);
     // Not free but clean
     clean_qbuf(r->readbuf);
     clean_qbuf(r->writebuf);

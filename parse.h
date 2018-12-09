@@ -20,9 +20,9 @@ typedef struct
     int state;
     int compelted;
     char buf[REQUEST_MAX_SIZE];
-    int total_bytes;
+    size_t total_bytes;
     // resume checking CRLFCRLF from this index in buf.
-    int idx2parse;
+    size_t idx2parse;
 } parse_fsm_t;
 
 

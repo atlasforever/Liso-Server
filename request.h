@@ -57,8 +57,8 @@ void reset_request(Request* r);
 int do_request(Request *request);
 void response_error(int code, Request *r);
 int is_cgi_request(Request *r);
-void close_content_wfd(int *fd);
-void close_content_rfd(int *fd);
+void close_content_wfd(Request *r);
+void close_content_rfd(Request *r);
 
 // Default error pages
 #define HTTP_400_PAGE "<html><head>\r    \

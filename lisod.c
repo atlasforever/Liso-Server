@@ -356,14 +356,14 @@ static void liso_shutdown(int status)
  * They return number of bytes transferred(You shouldn't pass 0 as len). -1 on error. 0 on connection closed.
  * -2 indicates that this function should be called again later. (EAGAIN)
  */
-int nb_recv_fd(int fd, void* buf, size_t len)
+int nb_read_fd(int fd, void* buf, size_t len)
 {
     int rn = 0;
 
     if (len == 0) {
         return -2;
     }
-    NO_TEMP_FAILURE((rn = recv(fd, buf, len, MSG_DONTWAIT)));
+    NO_TEMP_FAILURE((rn = read(fd, buf, len)));
     if (rn == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return -2;
@@ -375,7 +375,7 @@ int nb_recv_fd(int fd, void* buf, size_t len)
     }
     return rn;
 }
-int nb_recv_ssl(SSL *s, void* buf, size_t len)
+int nb_read_ssl(SSL *s, void* buf, size_t len)
 {
     int rn;
 
@@ -397,14 +397,14 @@ int nb_recv_ssl(SSL *s, void* buf, size_t len)
     }
     return rn;
 }
-int nb_send_fd(int fd, void* buf, size_t len)
+int nb_write_fd(int fd, void* buf, size_t len)
 {
     int sn = 0;
 
     if (len == 0) {
         return -2;
     }
-    NO_TEMP_FAILURE((sn = send(fd, buf, len, MSG_DONTWAIT)));
+    NO_TEMP_FAILURE((sn = write(fd, buf, len)));
     if (sn == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return -2;
@@ -416,7 +416,7 @@ int nb_send_fd(int fd, void* buf, size_t len)
     }
     return sn;
 }
-int nb_send_ssl(SSL *s, void* buf, size_t len)
+int nb_write_ssl(SSL *s, void* buf, size_t len)
 {
     int sn = 0;
 
@@ -463,9 +463,9 @@ int get_partial_req_body(http_client_t *c)
     }
     
     if (c->type == HTTP_TYPE) {
-        rn = nb_recv_fd(c->sockfd, get_qbuf_inaddr(r->readbuf), len);
+        rn = nb_read_fd(c->sockfd, get_qbuf_inaddr(r->readbuf), len);
     } else {
-        rn = nb_recv_ssl(c->client_context, get_qbuf_inaddr(r->readbuf), len);
+        rn = nb_read_ssl(c->client_context, get_qbuf_inaddr(r->readbuf), len);
     }
     
     if (rn == -2) {
@@ -493,7 +493,7 @@ int partial_body_to_cgi(http_client_t *c)
         return 0;
     }
 
-    wn = nb_send_fd(r->wfd, get_qbuf_outaddr(r->readbuf), n);
+    wn = nb_write_fd(r->wfd, get_qbuf_outaddr(r->readbuf), n);
     if (wn == -2) {
         return 0;
     } else if (wn == -1) {
@@ -507,14 +507,60 @@ int partial_body_to_cgi(http_client_t *c)
 }
 
 /*
- * -1 
+ * -2 on errors. -1 on fd EOF/pipe closed.  0 on ok.
  */
-int get_response_from_fd(http_client_t *c)
+int send_partial_response(http_client_t *c)
+{
+    Request *r = &c->request;
+    size_t len = r->writebuf->num;
+    int wn;
+
+    if (len == 0) {
+        return 0;
+    }
+
+    if (c->type == HTTP_TYPE) {
+        wn = nb_write_fd(c->sockfd, get_qbuf_outaddr(r->writebuf), len);
+    } else {
+        wn = nb_write_ssl(c->client_context, get_qbuf_outaddr(r->writebuf), len);
+    }
+
+    if (wn == -2) {
+        return 0;
+    } else if (wn == -1) {
+        return -2;
+    } else if (wn == 0) {
+        return -1;
+    }
+
+    r->writebuf->num -= wn;
+    r->writebuf->out_pos += wn;
+    return 0;
+}
+/*
+ * -2 on errors. -1 on fd EOF/pipe closed.  0 on ok.
+ */
+int get_partial_response(http_client_t *c)
 {
     Request *r = &c->request;
     size_t len = get_qbuf_emptys(r->writebuf);
+    int rn;
 
-    nb_recv_fd()
+    if (len == 0) {
+        return 0;
+    }
+
+    rn = nb_read_fd(r->rfd, get_qbuf_inaddr(r->writebuf), len);
+    if (rn == -2) {
+        return 0;
+    } else if (rn == -1) {
+        return -2;
+    } else if (rn == 0) {
+        return -1;
+    }
+    r->writebuf->num += rn;
+    r->writebuf->in_pos += rn;
+    return 0;
 }
 
 /**
@@ -609,7 +655,7 @@ void proc_clients(client_pool_t* p)
                 p->clients[i].request = request;
                 if (!request) {
                     log_error("alloc_request() failed");
-                    if (response_error(HTTP_INTERNAL_SERVER_ERROR, connfd) == -1) {
+                    if (response_error(HTTP_INTERNAL_SERVER_ERROR, &(cl->request)) == -1) {
                         log_error("Failed to send error response to sock %d", connfd);
                     }
                     remove_client(i, p);
@@ -689,7 +735,7 @@ void proc_clients(client_pool_t* p)
             // No more request body to deal with
             if (cl->request.content_length == 0 && cl->request.readbuf->num == 0) {
                 cl->request.states = SEND_CONTENT;
-                close_content_wfd(&cl->request.wfd);
+                close_content_wfd(&cl->request);
             } else if (cl->request.content_length > 0 && FD_ISSET(connfd, &p->rready_set)) {
                 p->nready--;
                 if (get_partial_req_body(cl) < 0) {
@@ -708,7 +754,6 @@ void proc_clients(client_pool_t* p)
                         response_error(HTTP_INTERNAL_SERVER_ERROR, &cl->request);
                         cl->need_close = 1;
                         cl->request.states = SEND_CONTENT;
-                        close_content_wfd(&cl->request.wfd);
                     }
                 } else if (cl->request.resource_type == STATIC_RESOURCE) {
                     discard_req_body(cl);
@@ -722,18 +767,30 @@ void proc_clients(client_pool_t* p)
             }
 
             if (cl->request.rfd != -1 && FD_ISSET(cl->request.rfd, &p->rready_set)) {
-
+                int ret = get_partial_response(cl);
+                if (ret == -2) {
+                    response_error(HTTP_INTERNAL_SERVER_ERROR, &cl->request);
+                    cl->request.states = SEND_CONTENT;
+                    cl->need_close = 1;
+                } else if (ret == -1) {
+                    close_content_rfd(&cl->request);
+                }
             }
 
-            if (cl->request.writebuf->num > 0
-                && FD_ISSET(connfd, &p->wready_set)) {
-                
+            if (cl->request.writebuf->num > 0 && FD_ISSET(connfd, &p->wready_set)) {
+                int ret = send_partial_response(cl);
+                if (ret == -2 || ret == -1) {
+                    cl->need_close = 1;
+                    cl->request.states = CLOSE;
+                }
             }
             break;
         case CLOSE:
         default:
             if (cl->need_close) {
                 remove_client(i, p);
+            } else {
+                reset_request(&cl->request);
             }
             break;
         }

@@ -297,8 +297,8 @@ void response_error(int code, Request *r)
     time_t now;
 
     // Stop what we originally want to send
-    close_content_rfd(&r->rfd);
-    close_content_wfd(&r->wfd);
+    close_content_rfd(r);
+    close_content_wfd(r);
 
     // just send error response and exit this request
     r->states = SEND_CONTENT;
@@ -521,23 +521,20 @@ static void free_headers(Request_header* head)
     }
 }
 
-void close_content_wfd(int *fd)
+void close_content_wfd(Request *r)
 {
-    const int ifd = *fd;
-
-    if (ifd != -1) {
-        close(ifd);
-        *fd = -1;
-        FD_CLR(ifd, &pool.wready_set);
+    if (r->wfd != -1) {
+        close(r->wfd);
+        r->wfd = -1;
+        FD_CLR(r->wfd, &pool.wready_set);
     }
 }
-void close_content_rfd(int *fd)
+void close_content_rfd(Request *r)
 {
-    const int ifd = *fd;
-    if (ifd != -1) {
-        close(ifd);
-        *fd = -1;
-        FD_CLR(ifd, &pool.rready_set);
+    if (r->rfd != -1) {
+        close(r->rfd);
+        r->rfd = -1;
+        FD_CLR(r->rfd, &pool.rready_set);
     }
 }
 
@@ -547,8 +544,8 @@ void reset_request(Request* r)
     free_headers(r->headers->next);
     r->header_count = 0;
 
-    close_content_wfd(&r->wfd);
-    close_content_rfd(&r->rfd);
+    close_content_wfd(r);
+    close_content_rfd(r);
     // Not free but clean
     clean_qbuf(r->readbuf);
     clean_qbuf(r->writebuf);

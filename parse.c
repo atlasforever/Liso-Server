@@ -68,9 +68,9 @@ int recv_one_request(http_client_t *client)
     len = REQUEST_MAX_SIZE - fsm->total_bytes;
     if (len > 0) {
         if (client->type == HTTP_TYPE) {
-            rn = nb_recv_fd(client->sockfd, &fsm->buf[fsm->total_bytes], len);
+            rn = nb_read_fd(client->sockfd, &fsm->buf[fsm->total_bytes], len);
         } else {
-            rn = nb_recv_ssl(client->client_context, &fsm->buf[fsm->total_bytes], len);
+            rn = nb_read_ssl(client->client_context, &fsm->buf[fsm->total_bytes], len);
         }
     }
     

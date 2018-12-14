@@ -7,7 +7,8 @@
 #define REQUEST_MAX_SIZE 8192
 #define HTTP_VERSION_MAX_SIZE 32
 #define HTTP_METHOD_MAX_SIZE 32
-#define HTTP_URI_MAX_SIZE 2048
+#define HTTP_URI_MAX_SIZE 1024
+#define HTTP_QUERY_MAX_SIZE 1024
 #define HEADER_NAME_MAX_SIZE 64
 #define HEADER_VALUE_MAX_SIZE 4096
 
@@ -37,6 +38,7 @@ typedef struct
 	char http_version[HTTP_VERSION_MAX_SIZE + 1];
 	char http_method[HTTP_METHOD_MAX_SIZE + 1];
 	char http_uri[HTTP_URI_MAX_SIZE + 1];
+	char http_query[]
 	Request_header *headers;	// dummy head of linked list for headers 
 	int header_count;
 	int content_length;

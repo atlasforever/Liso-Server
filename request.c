@@ -73,7 +73,7 @@ static int do_GET_request(Request *request)
 
 
     log_info("A GET Request");
-    char *path = malloc(HTTP_URI_MAX_SIZE + 256);
+    char *path = malloc(HTTP_URI_MAX_SIZE + 256 + 1);
     if (!path) {
         return -HTTP_INTERNAL_SERVER_ERROR;
     }

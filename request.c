@@ -6,20 +6,22 @@
 #include <unistd.h>
 #include <sys/sendfile.h>
 #include <string.h>
+#include <linux/limits.h>
 
 #include "http_common.h"
 #include "log.h"
-#include "parse.h"
 #include "lisod.h"
 #include "request.h"
+#include "cgi.h"
 
 #define WRITE_BUFFER_MAX_SIZE 2048
 #define READ_BUFFER_MAX_SIZE 2048
 
 extern char *www_folder;
 extern client_pool_t pool;
+extern const char *cgi_path;
 const char *default_index = "index.html";
-const char *cgi_path = "/cgi/";
+
 
 static int do_GET_request(Request *request);
 static int do_HEAD_request(Request *request);
@@ -32,8 +34,7 @@ static void end_rsp_headers(Request *r);
 static unsigned long get_file_size(char *path);
 static char *get_MMIE(const char *filename);
 static int get_mtime(const char *path, time_t *mt);
-static char* get_header_value(Request *request, const char *name);
-
+static int is_cgi_request(Request *r);
 
 /* 
  * 0: ok.
@@ -73,7 +74,7 @@ static int do_GET_request(Request *request)
 
 
     log_info("A GET Request");
-    char *path = malloc(HTTP_URI_MAX_SIZE + 256 + 1);
+    char *path = malloc(PATH_MAX); // including null
     if (!path) {
         return -HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -82,18 +83,18 @@ static int do_GET_request(Request *request)
     strcpy(path, www_folder);
     // the folder should end with '/'
     log_debug("path is:%s", path);
-    log_debug("uri is:%s", request->http_uri);
+    log_debug("uri is:%s", request->http_path);
     if (path[strlen(path) - 1] != '/') {
         strcat(path, "/");
     }
-    if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
+    if (strcmp(request->http_path, "/") == 0 || strcmp(request->http_path, " ") == 0) {
         strcat(path, default_index);
-    } else if (request->http_uri[0] == '/') {
+    } else if (request->http_path[0] == '/') {
         // already a slash in www_path
-        strcat(path, request->http_uri + 1);
+        strcat(path, request->http_path + 1);
     } else {
         // only support "abs_path"
-        log_info("A invalid path:%s", request->http_uri);
+        log_info("A invalid path:%s", request->http_path);
         free(path);
         return -HTTP_NOT_FOUND;
     }
@@ -168,7 +169,7 @@ static int do_HEAD_request(Request *request)
     unsigned long sz;
 
     log_info("A HEAD Request");
-    char *path = malloc(HTTP_URI_MAX_SIZE + 256);
+    char *path = malloc(HTTP_PATH_MAX_SIZE + 256);
     if (!path) {
         if (response_error(HTTP_INTERNAL_SERVER_ERROR, fd) == -1) {return -1;}
         return 0;
@@ -178,18 +179,18 @@ static int do_HEAD_request(Request *request)
     strcpy(path, www_folder);
     // the folder should end with '/'
     log_debug("path is:%s", path);
-    log_debug("uri is:%s", request->http_uri);
+    log_debug("uri is:%s", request->http_path);
     if (path[strlen(path) - 1] != '/') {
         strcat(path, "/");
     }
-    if (strcmp(request->http_uri, "/") == 0 || strcmp(request->http_uri, " ") == 0) {
+    if (strcmp(request->http_path, "/") == 0 || strcmp(request->http_path, " ") == 0) {
         strcat(path, default_index);
-    } else if (request->http_uri[0] == '/') {
+    } else if (request->http_path[0] == '/') {
         // already a slash in www_path
-        strcat(path, request->http_uri + 1);
+        strcat(path, request->http_path + 1);
     } else {
         // only support "abs_path"
-        log_info("A invalid path:%s", request->http_uri);
+        log_info("A invalid path:%s", request->http_path);
         free(path);
         if (response_error(HTTP_NOT_FOUND, fd) == -1) {return -1;}
         return 0;
@@ -343,7 +344,7 @@ void response_error(int code, Request *r)
 
 int is_cgi_request(Request *r)
 {
-    return (strncmp(cgi_path, r->http_uri, strlen(cgi_path)) == 0);
+    return (strncmp(cgi_path, r->http_path, strlen(cgi_path)) == 0);
 }
 
 static char* get_header_value(Request *request, const char *name)
@@ -552,4 +553,37 @@ void reset_request(Request* r)
     r->content_length = 0;
 	r->states = READ_REQ_HEADERS;
 	r->resource_type = STATIC_RESOURCE;
+}
+
+
+// NULL on error. You should free the returned buffer with free().
+char* make_realpath(const char *vpath)
+{
+    size_t vplen = strlen(vpath);
+    size_t wflen = strlen(www_folder);
+    size_t l = vplen + wflen + 1;
+    char *buf;
+
+    if (l > PATH_MAX) {
+        log_debug("Real path too long");
+        return NULL;
+    }
+    if (vpath[0] != '/') {
+        log_debug("Virtual path should begin with slash");
+        return NULL;
+    }
+
+    buf = malloc(l + 1);
+    if (!buf) {
+        log_error("malloc fail");
+        return NULL;
+    }
+
+    strcpy(buf, www_folder);
+    if (www_folder[wflen - 1] == '\0') {
+        strcpy(buf + wflen - 1, vpath);
+    } else {
+        strcpy(buf + wflen, vpath);
+    }
+    return buf;
 }

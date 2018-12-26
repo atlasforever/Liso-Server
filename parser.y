@@ -209,12 +209,20 @@ request_line: token t_sp text t_sp text t_crlf {
 		*err_reason = REQUEST_FAILURE;
 		YYABORT;
 	}
-	if (strlen($3) > HTTP_URI_MAX_SIZE) {
+	if (strlen($3) > HTTP_PATH_MAX_SIZE) {
 		*err_reason = URI_LONG_FAILURE;
 		YYABORT;
 	}
 	strcpy(parsing_request->http_method, $1);
-	strcpy(parsing_request->http_uri, $3);
+	/* Get query */
+	char *qs = strchr($3, '?');
+	if (qs) {
+		strncpy(parsing_request->http_path, $3, qs - $3);
+		strcpy(parsing_request->http_query, qs + 1);
+	} else {
+		strcpy(parsing_request->http_path, $3);
+		strcpy(parsing_request->http_query, "");
+	}
 	strcpy(parsing_request->http_version, $5);
 }
 

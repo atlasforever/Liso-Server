@@ -46,6 +46,8 @@ typedef struct
 	request_states_t states;
 	request_resource_t resource_type;
 
+	http_client_t *client;
+
 	int rfd; // used to read from a fd presenting a static file or a CGI program
 	int wfd; // used to write to a fd presenting a static file or a CGI program
 	// Response for static request, except the static-file-body part.

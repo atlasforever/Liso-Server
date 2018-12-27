@@ -151,33 +151,38 @@ static int set_env_by_str(char *envname, char *envvalue, char **dst)
 
 
 
-static int sep_scriptname_pathinfo(const char *path, char *out_sn, char *out_pi)
+int sep_scriptname_pathinfo(const char *path, char *out_sn, char *out_pi)
 {
+    int ret;
     size_t path_len = strlen(path);
-    size_t pi_len;
-    const char *rpath = make_realpath(path);
+    size_t root_len;
+    char *rpath = make_realpath(path);
     if (!rpath) {
         return -1;
     }
 
-    pi_len = strlen(rpath);
+    root_len = strlen(rpath) - path_len;
     strcpy(out_sn, "");
     strcpy(out_pi, "");
 
 
     while (1) {
-
         if (access(rpath, X_OK) == 0) {
-            int pos = strlen(rpath);
-            strcpy(out_pi, rpath + pos);
-            strncpy(out_sn, path, path_len - pos);
+            strcpy(out_sn, rpath + root_len);
+            strcpy(out_pi, path + strlen(out_sn));
+            ret = 0;
             break;
         } else {
-            char *slash = strrchr(out_sn, '/');
-            if ()
+            char *slash = strrchr(rpath, '/');
+            if (!slash) {
+                ret = -1;
+                break;
+            } else {
+                *slash = '\0';
+            }
         }
     }
 
     free(rpath);
-    return 0;
+    return ret;
 }
